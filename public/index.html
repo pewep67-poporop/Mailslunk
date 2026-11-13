@@ -1,0 +1,205 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MailSleuth — Email Forensics &amp; Attacker Tracing Lab</title><link rel="stylesheet" href="app.css"></head><body>
+<div class="bg" aria-hidden="true"><i class="tiles a"></i><i class="tiles b"></i><i class="bolt"></i><i class="bolt two"></i></div><div id="lens" hidden aria-hidden="true"></div>
+<div class="tape"></div>
+<header><svg class="warn" viewBox="0 0 64 64" width="48" aria-hidden="true"><path d="M32 6 62 58H2z" fill="#ffd400" stroke="#111" stroke-width="4" stroke-linejoin="round"/><path d="M32 24v16" stroke="#111" stroke-width="5" stroke-linecap="round"/><circle cx="32" cy="48" r="3" fill="#111"/></svg>
+<h1>MailSleuth <small id="subtitle" data-i18n="subtitle">Email Forensics &amp; Attacker Tracing Lab</small></h1>
+<div id="accountBar" hidden><details id="accountMenu"><summary><span id="avatarSmMono" class="avatar-mono avatar-sm" hidden></span><img id="avatarSm" class="avatar-sm" alt="" hidden><span id="accountName"></span></summary>
+<div class="accountPanel">
+<h3 data-i18n="profileTitle">Profile</h3>
+<div class="profileRow"><span id="avatarBigMono" class="avatar-mono avatar-lg" hidden></span><img id="avatarBig" class="avatar-lg" alt="" hidden><div><p id="profileMeta" class="summary"></p><p id="loginMs" class="summary"></p><p id="sessionTimer" class="summary"></p></div></div>
+<input type="file" id="avatarFile" accept=".png,.jpg,.jpeg,image/png,image/jpeg">
+<button id="avatarUpload" type="button" data-i18n="uploadAvatar">Upload avatar</button><p id="avatarMsg" role="alert"></p>
+<details class="acctPass"><summary data-i18n="accountTitle">Account — change password</summary>
+<input id="po" type="password" data-i18n-ph="currentPass" placeholder="current password" autocomplete="current-password" maxlength="72">
+<input id="pn" type="password" data-i18n-ph="newPass" placeholder="new password (10–72 chars)" autocomplete="new-password" minlength="10" maxlength="72">
+<button id="pgo" data-i18n="change">Change</button><p id="pmsg" role="alert"></p></details>
+<button id="logout" data-i18n="logout">Logout</button>
+</div></details></div>
+<div class="langwrap"><span id="langFlag" class="flag-icon" aria-hidden="true"></span><select id="lang" aria-label="Language"><option value="en">EN</option><option value="vi">VI</option></select></div></header>
+<main>
+<section id="login">
+<div id="loginForm"><h2 id="loginH" data-i18n="loginH">Login</h2>
+<input id="u" data-i18n-ph="username" placeholder="username" autocomplete="username" maxlength="32">
+<input id="p" type="password" data-i18n-ph="password" placeholder="password" autocomplete="current-password" maxlength="72">
+<button id="go" data-i18n="login">Login</button><p id="err" role="alert"></p>
+<p class="switch"><a href="#" id="forgot" data-i18n="forgot">Forgot password?</a> · <a href="#" id="showReg" data-i18n="createAccount">Create account</a></p></div>
+<div id="reg" hidden><h3 id="regH" data-i18n="regH">Create account</h3>
+<input id="nu" data-i18n-ph="username" placeholder="username" autocomplete="username" maxlength="32">
+<input id="np" type="password" data-i18n-ph="newPass" placeholder="new password (10–72 chars)" autocomplete="new-password" minlength="10" maxlength="72">
+<input id="np2" type="password" data-i18n-ph="confirmPass" placeholder="confirm password" autocomplete="new-password" minlength="10" maxlength="72">
+<p class="hint" id="rule" data-i18n="userRule">Username: 3–32 characters (letters, digits, . _ -). Password: 10–72 characters, max 72 UTF-8 bytes.</p>
+<button id="ngo" data-i18n="register">Register</button><p id="nmsg" role="alert"></p>
+<p class="switch"><a href="#" id="showLogin" data-i18n="haveAccount">Back to login</a></p></div>
+<div id="rec" hidden><h3 id="recH" data-i18n="recH">Reset password</h3>
+<input id="ru" data-i18n-ph="username" placeholder="username" autocomplete="username" maxlength="32">
+<input id="rk" data-i18n-ph="recoveryKey" placeholder="recovery key XXXX-XXXX-..." maxlength="64" autocomplete="off" spellcheck="false">
+<input id="rp" type="password" data-i18n-ph="newPass" placeholder="new password (10–72 chars)" autocomplete="new-password" minlength="10" maxlength="72">
+<button id="rgo" data-i18n="reset">Reset</button><p id="rmsg" role="alert"></p>
+<p class="switch"><a href="#" id="recBack" data-i18n="haveAccount">Back to login</a></p></div>
+<div class="detective-stage" aria-hidden="true">
+<div class="matrix-rain"></div>
+<div class="detective-art"><img class="detective-body" src="img/detective-clean.png" alt=""><img class="detective-lens" src="img/detective-lens.png" alt=""></div>
+</div></section>
+<section id="keybox" hidden role="region" aria-labelledby="keyH"><h2 id="keyH" data-i18n="keyTitle">Save your recovery key</h2>
+<p class="hint" data-i18n="keyHint">This key is shown once and is the only way to reset a forgotten password. Store it somewhere safe; the server keeps only a hash.</p>
+<code id="keyval"></code>
+<div><button id="keycopy" type="button" data-i18n="copy">Copy</button> <button id="keyok" type="button" class="ghost" data-i18n="saved">I saved it</button></div><p id="keymsg" role="status"></p></section>
+<section id="app" hidden><h2 id="appH" data-i18n="appH">Upload dataset (.eml .msg .mbox .pst .ost .emlx .mht .mhtml .txt)</h2>
+<nav class="tabs" role="tablist" aria-label="Tools">
+<button type="button" class="tab active" id="tabAnalysis" role="tab" aria-selected="true" aria-controls="paneAnalysis" data-pane="paneAnalysis" data-i18n="tabAnalysis">Analysis</button>
+<button type="button" class="tab" id="tabDns" role="tab" aria-selected="false" aria-controls="paneDns" data-pane="paneDns" data-i18n="tabDns">DNS</button>
+<button type="button" class="tab" id="tabIp" role="tab" aria-selected="false" aria-controls="paneIp" data-pane="paneIp" data-i18n="tabIp">IP / Geo</button>
+<button type="button" class="tab" id="tabTrust" role="tab" aria-selected="false" aria-controls="paneTrust" data-pane="paneTrust" data-i18n="tabTrust">Trust &amp; AI</button>
+<button type="button" class="tab" id="tabHistory" role="tab" aria-selected="false" aria-controls="paneHistory" data-pane="paneHistory" data-i18n="tabHistory">History</button>
+<button type="button" class="tab" id="tabLogs" role="tab" aria-selected="false" aria-controls="paneLogs" data-pane="paneLogs" data-i18n="tabLogs" hidden>Logs</button>
+</nav>
+<div id="paneAnalysis" role="tabpanel" aria-labelledby="tabAnalysis">
+<div id="drop" class="dropzone">
+<p class="hint" id="dropHint" data-i18n="dropHint">Drag &amp; drop email files or whole folders here, or use the buttons below.</p>
+<div class="toolrow">
+<button type="button" id="fbtn" data-i18n="pickFilesBtn">Chọn tệp</button>
+<button type="button" id="fdirBtn" data-i18n="pickFolderBtn">Chọn thư mục</button>
+<input type="file" id="f" class="sr-only" accept=".eml,.msg,.mbox,.pst,.ost,.emlx,.mht,.mhtml,.txt" multiple aria-hidden="true" tabindex="-1">
+<input type="file" id="fdir" class="sr-only" webkitdirectory directory multiple aria-hidden="true" tabindex="-1">
+</div>
+<p id="pickMsg" class="summary" role="status"></p>
+<ul id="flist" class="filelist" aria-live="polite"></ul>
+<div id="preflight" hidden>
+<p id="pfMsg" class="summary pfbad" role="alert"></p>
+<ul id="pfList" class="filelist pflist" aria-live="polite"></ul>
+</div>
+<div class="toolrow"><button type="button" id="fclear" class="ghost" data-i18n="clearList">Clear list</button></div>
+</div>
+<div class="runbar" role="group" data-i18n-aria="analysisControls" aria-label="Analysis controls">
+<button id="run" data-i18n="analyze">Analyze</button>
+<button id="btnPause" type="button" class="ghost" data-i18n="pause" disabled>Pause</button>
+<button id="btnStop" type="button" class="ghost" data-i18n="stop" disabled>Stop</button>
+<button id="btnCancel" type="button" class="danger" data-i18n="cancel" disabled>Cancel</button>
+<button id="exportCsv" type="button">Export CSV</button>
+</div>
+<p id="runState" class="summary runstate" role="status" aria-live="polite" hidden></p>
+<div id="progBarWrap" class="progwrap" hidden>
+<div class="progressbar running" id="progBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="analysis progress"><div id="progFill"></div></div>
+<span id="progPct" class="summary">0%</span>
+</div>
+<div id="prog" aria-live="polite"></div><div id="out" aria-live="polite"></div>
+<details><summary data-i18n="aiTitle">AI assist (OpenRouter, key stays in browser)</summary>
+<p class="hint" id="aiHint" data-i18n="aiHint">The API key stays in this tab and is sent only to the endpoint you choose. Only the findings summary is sent — never the raw email file. HTTPS is required (plain HTTP only for localhost).</p>
+<input id="aiurl" type="url" value="https://openrouter.ai/api/v1/chat/completions" data-i18n-ph="aiUrl" placeholder="API endpoint">
+<select id="aimodelSel" data-i18n-aria="aiModelSelect" style="width:100%">
+<optgroup label="Free models (FREE)" data-i18n-g="aiModelsFree">
+<option value="openrouter/free">OpenRouter Free Router (FREE) — openrouter/free</option>
+<option value="stealth/crouton-alpha">Crouton Alpha (FREE) — stealth/crouton-alpha</option>
+<option value="google/gemma-4-31b-it:free">Google Gemma 4 31B (FREE) — google/gemma-4-31b-it:free</option>
+<option value="google/gemma-4-26b-a4b-it:free">Google Gemma 4 26B A4B (FREE) — google/gemma-4-26b-a4b-it:free</option>
+<option value="nvidia/nemotron-3-ultra-550b-a55b:free">NVIDIA Nemotron 3 Ultra 550B (FREE) — nvidia/nemotron-3-ultra-550b-a55b:free</option>
+<option value="nvidia/nemotron-3.5-super-vl:free">NVIDIA Nemotron 3.5 Super VL (FREE) — nvidia/nemotron-3.5-super-vl:free</option>
+<option value="nvidia/nemotron-3.5-lightning:free">NVIDIA Nemotron 3.5 Lightning (FREE) — nvidia/nemotron-3.5-lightning:free</option>
+<option value="recursive/flint-v1.0:free">Recursive Flint (FREE) — recursive/flint-v1.0:free</option>
+<option value="liquid/lfm-2.5-2.6b:free">LiquidAI LFM2.5-2.6B (FREE) — liquid/lfm-2.5-2.6b:free</option>
+<option value="dots-studio/dots-3-note-preview:free">Dots Studio Dots3-Note (FREE) — dots-studio/dots-3-note-preview:free</option>
+<option value="xingchen-agi/xing4.0-29b-a4b:free">XingChen Xing4.0 29B (FREE) — xingchen-agi/xing4.0-29b-a4b:free</option>
+<option value="cohere/north-mini-code:free">Cohere North Mini Code (FREE) — cohere/north-mini-code:free</option>
+</optgroup>
+<optgroup label="Paid models — your OpenRouter key" data-i18n-g="aiModelsPaid">
+<option value="openai/gpt-4o-mini">OpenAI GPT-4o-mini — openai/gpt-4o-mini</option>
+<option value="openai/gpt-4.1-mini">OpenAI GPT-4.1 Mini — openai/gpt-4.1-mini</option>
+<option value="anthropic/claude-sonnet-4.5">Anthropic Claude Sonnet 4.5 — anthropic/claude-sonnet-4.5</option>
+<option value="anthropic/claude-opus-4.5">Anthropic Claude Opus 4.5 — anthropic/claude-opus-4.5</option>
+<option value="google/gemini-2.5-flash">Google Gemini 2.5 Flash — google/gemini-2.5-flash</option>
+<option value="google/gemini-2.5-pro">Google Gemini 2.5 Pro — google/gemini-2.5-pro</option>
+<option value="deepseek/deepseek-chat">DeepSeek Chat — deepseek/deepseek-chat</option>
+<option value="deepseek/deepseek-v3.2">DeepSeek V3.2 — deepseek/deepseek-v3.2</option>
+<option value="meta-llama/llama-3.3-70b-instruct">Meta Llama 3.3 70B — meta-llama/llama-3.3-70b-instruct</option>
+<option value="mistralai/mistral-small-3.2-24b-instruct">Mistral Small 3.2 24B — mistralai/mistral-small-3.2-24b-instruct</option>
+<option value="mistralai/mistral-large-4-0">Mistral Large 4 — mistralai/mistral-large-4-0</option>
+<option value="x-ai/grok-4.3">xAI Grok 4.3 — x-ai/grok-4.3</option>
+<option value="qwen/qwen3-32b">Qwen3 32B — qwen/qwen3-32b</option>
+</optgroup>
+<option value="__custom" data-i18n="aiModelCustom">Custom… (type model id manually)</option>
+</select>
+<input id="aimodel" data-i18n-ph="aiModel" placeholder="model id — e.g. provider/model-id or provider/model-id:free" autocomplete="off" hidden>
+<input id="aikey" type="password" data-i18n-ph="apiKey" placeholder="API key (yours, from openrouter.ai)" autocomplete="off">
+<label class="switch"><input type="checkbox" id="aicompact" checked> <span data-i18n="aiCompact">Compact view — hide null/empty output (uncheck for full detail)</span></label>
+<button id="ai" data-i18n="askAi">Ask AI</button> <button id="forgetai" type="button" class="ghost" data-i18n="forgetKey">Forget key</button>
+<pre id="aiout" aria-live="polite"></pre></details>
+</div>
+<div id="paneDns" role="tabpanel" aria-labelledby="tabDns" hidden>
+<h3 data-i18n="dnsH">DNS lookup</h3>
+<div class="toolrow">
+<input id="dnsDomain" data-i18n-ph="dnsDomain" placeholder="example.com or IP" autocomplete="off" maxlength="253">
+<select id="dnsType" data-i18n-aria="dnsTypeAria">
+<option value="all" data-i18n="dnsTypeAll">All records / DNS health</option>
+<option value="a">A</option><option value="aaaa">AAAA</option><option value="mx">MX</option>
+<option value="txt">TXT</option><option value="spf">SPF</option><option value="dmarc">DMARC</option>
+<option value="dkim">DKIM</option><option value="ns">NS</option><option value="soa">SOA</option>
+<option value="ptr">PTR</option><option value="asn">ASN</option><option value="blacklist">Blacklist</option>
+</select>
+<select id="dnsSource" data-i18n-aria="dnsSourceAria">
+<option value="native" data-i18n="dnsSourceNative">Native DNS</option>
+<option value="mxtoolbox" data-i18n="dnsSourceMx">MxToolbox</option>
+</select>
+<button id="dnsGo" data-i18n="lookup">Lookup</button>
+</div>
+<div class="toolrow" id="dnsDkimRow" hidden><input id="dnsSelector" data-i18n-ph="dnsSelector" placeholder="DKIM selector (e.g. default)" autocomplete="off" maxlength="64"></div>
+<div class="toolrow" id="mxRow" hidden><input id="mxkey" type="password" data-i18n-ph="mxKey" placeholder="MxToolbox API key (optional if server key set)" autocomplete="off" maxlength="200"> <button id="mxforget" type="button" class="ghost" data-i18n="forgetMxKey">Forget key</button></div>
+<p class="hint" data-i18n="dnsHint">Native DNS queries this server. MxToolbox runs the lookup remotely; you can enter your own API key. Keys are kept in this tab and are never written to the audit log.</p>
+<p id="dnsMsg" role="alert"></p><div id="dnsOut" aria-live="polite"></div>
+</div>
+<div id="paneIp" role="tabpanel" aria-labelledby="tabIp" hidden>
+<h3 data-i18n="ipH">IP geolocation and network</h3>
+<div class="toolrow" id="mapKeyRow">
+<label for="mapkey" data-i18n="mapglotKey">MapGlot API key</label>
+<input type="password" id="mapkey" autocomplete="off" spellcheck="false" maxlength="200" data-i18n-ph="mapglotKeyPh" placeholder="key from mapglot.com — saved server-side">
+<button id="mapkeySave" type="button" data-i18n="mapKeySave">Save</button>
+<button id="mapkeyClear" type="button" class="ghost" data-i18n="mapKeyClear">Remove</button>
+<span id="mapkeyMsg" class="summary" role="status"></span>
+</div>
+<p class="hint" id="mapKeyHint" data-i18n="mapglotHint">Each account keeps its own MapGlot key (optional): it reverse-geocodes each map point so your report legend carries the full street address. Change or remove it any time. The map image itself always comes from OpenStreetMap tiles (MapGlot has no static-image API).</p>
+<div class="toolrow"><input id="ipAddr" data-i18n-ph="ipAddr" placeholder="8.8.8.8" autocomplete="off" maxlength="45"><button id="ipGo" data-i18n="lookup">Lookup</button></div>
+<p class="hint" data-i18n="ipHint">MaxMind GeoLite2 is used locally. PTR is queried through this server. Location is approximate and may be affected by VPN/proxy.</p>
+<p id="ipMsg" role="alert"></p><div id="ipOut" aria-live="polite"></div>
+</div>
+<div id="paneTrust" role="tabpanel" aria-labelledby="tabTrust" hidden>
+<h3 data-i18n="trustH">Threat feeds &amp; AI assessment</h3>
+<p class="hint" data-i18n="trustHint">Optional. Off by default: without keys the server stays fully offline. Keys are stored per account in the server database and are never echoed back or written to the audit log. Only the URL or the file hash is ever sent to a feed - never mail content.</p>
+<div class="toolrow">
+<label for="repAbuseKey" data-i18n="repAbuseKey">abuse.ch Auth-Key (URLhaus)</label>
+<input type="password" id="repAbuseKey" autocomplete="off" spellcheck="false" maxlength="200" data-i18n-ph="repAbusePh" placeholder="free key from abuse.ch">
+</div>
+<div class="toolrow">
+<label for="repVtKey" data-i18n="repVtKey">VirusTotal API key</label>
+<input type="password" id="repVtKey" autocomplete="off" spellcheck="false" maxlength="200" data-i18n-ph="repVtPh" placeholder="hash lookup only - files are never uploaded">
+</div>
+<div class="toolrow">
+<label for="repSbKey" data-i18n="repSbKey">Google Safe Browsing key</label>
+<input type="password" id="repSbKey" autocomplete="off" spellcheck="false" maxlength="200" data-i18n-ph="repSbPh" placeholder="optional">
+</div>
+<div class="toolrow">
+<label for="llmKey" data-i18n="llmKey">LLM API key (OpenRouter compatible)</label>
+<input type="password" id="llmKey" autocomplete="off" spellcheck="false" maxlength="200" data-i18n-ph="llmKeyPh" placeholder="optional - used only for the semantic assessment">
+</div>
+<div class="toolrow">
+<button id="trustSave" type="button" data-i18n="trustSave">Save keys</button>
+<button id="trustClear" type="button" class="ghost" data-i18n="trustClear">Remove</button>
+<span id="trustMsg" class="summary" role="status"></span>
+</div>
+<p class="hint" id="trustState" data-i18n="trustState">Server status: checking…</p>
+</div>
+<div id="paneHistory" role="tabpanel" aria-labelledby="tabHistory" hidden>
+<h3 data-i18n="historyH">Investigation history</h3>
+<div class="toolrow"><input id="histQ" data-i18n-ph="historySearchPh" placeholder="file, analyst or case ID" autocomplete="off" maxlength="100"><button id="histGo" data-i18n="historySearch">Search</button><button id="histRefresh" data-i18n="refresh">Refresh</button></div>
+<p class="hint" data-i18n="historyHint">Latest 100 cases. Open a case to restore its result.</p>
+<p id="histMsg" role="alert"></p><div id="histOut" aria-live="polite"></div>
+</div>
+<div id="paneLogs" role="tabpanel" aria-labelledby="tabLogs" hidden>
+<h3 data-i18n="logsH">Audit and session log</h3>
+<div class="toolrow"><button id="logsRefresh" data-i18n="refresh">Refresh</button></div>
+<p class="hint" data-i18n="logsHint">Admin only. Login duration is measured server-side; ended sessions are signed with SHA-256 and chained to the previous signature.</p>
+<p id="logsMsg" role="alert"></p>
+<h4 data-i18n="auditLog">Audit log</h4><div id="logsOut" aria-live="polite"></div>
+<h4 data-i18n="sessionLog">Signed session endings</h4><div id="sessionsOut" aria-live="polite"></div>
+</div>
+</section>
+</main><div class="tape"></div><script src="fx.js" type="module"></script><script src="app.js" type="module"></script></body></html>

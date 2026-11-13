@@ -1,0 +1,44 @@
+# --- runtime data (never commit) ---
+data/
+datasets/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.bin
+quarantine/
+uploads/
+messages/
+purge-logs/
+models/
+evidence/
+
+# --- env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.log
+
+# --- node / build ---
+node_modules/
+dist/
+build/
+
+# --- editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- test artifacts ---
+tests/pstbin/*.bak
+tests/__pycache__/
+tests/*.pyc

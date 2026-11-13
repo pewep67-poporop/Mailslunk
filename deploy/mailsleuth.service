@@ -1,0 +1,58 @@
+[Unit]
+Description=MailSleuth Python (FastAPI) — email forensics lab
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mailsleuth
+Group=mailsleuth
+
+# BẮT BUỘC: mọi đường dẫn tương đối (DATA_DIR, GEOIP_DIR, quarantine) tính từ đây
+WorkingDirectory=/opt/mailsleuth_python
+Environment=DATA_DIR=./data
+Environment=GEOIP_DIR=./geoip
+Environment=ADMIN_PASS=doi-mat-khau-nay
+Environment=LIVE_DNS=1
+# --- resilience ---
+# always: hồi phục cả khi bị kill -9 hoặc treo (watchdog sẽ tự exit)
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+TimeoutStopSec=30
+KillSignal=SIGINT
+# Watchdog: app tự gọi os._exit(1) khi DB/storage hỏng liên tục -> systemd dựng lại
+Environment=WATCHDOG_INTERVAL=60
+Environment=WATCHDOG_FAILS=3
+# --- memory ---
+MemoryMax=3G
+MemoryHigh=2G
+TasksMax=256
+LimitNOFILE=8192
+OOMPolicy=stop
+# --- optional layers (off by default) ---
+#Environment=REPUTATION_ENABLED=1
+#Environment=LLM_ENABLED=1
+#Environment=ML_ENABLED=1
+
+ExecStart=/opt/mailsleuth_python/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --timeout-graceful-shutdown 20 --log-level warning
+
+# --- hardening ---
+NoNewPrivileges=true
+PrivateTmp=false            # readpst cần /tmp riêng nhưng phải sạch -> dùng PrivateTmp=true cũng an toàn
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+ReadWritePaths=/opt/mailsleuth_python/data
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mailsleuth
+
+[Install]
+WantedBy=multi-user.target
