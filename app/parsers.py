@@ -1,10 +1,11 @@
-"""Parsers — EML/MBOX/TXT via stdlib email; PST/OST needs readpst (Linux/Docker).
+"""Parsers — EML/MBOX/TXT via stdlib email; PST/OST via an external extractor.
 
-PST/OST is never parsed in-process: libpst's ``readpst`` extracts every message
-to .eml inside a private temp dir, then the normal per-message pipeline runs on
-each .eml. Errors bubble up as :class:`ParseError` with the same stable codes as
-the Node server (``readpst_missing`` / ``pst_timeout`` / ``readpst_failed`` /
-``format_mismatch`` / ``empty``).
+PST/OST is never parsed in-process. Either libpst's ``readpst`` (Linux/Docker)
+or the bundled Python extractor ``tools/pst_extract.py`` (pypff, runs in WSL)
+writes one .eml per message into a private temp dir; the normal per-message
+pipeline then runs on each .eml. Errors bubble up as :class:`ParseError` with
+the same stable codes as the Node server (``readpst_missing`` / ``pst_timeout``
+/ ``readpst_failed`` / ``format_mismatch`` / ``empty``).
 """
 import email, re, mailbox, io, os, shutil, subprocess, tempfile
 from email import policy
@@ -31,6 +32,27 @@ def _pst_int(name: str, default: int) -> int:
         return max(1, int(os.getenv(name, str(default))))
     except Exception:
         return default
+
+
+def _wsl_path(p: str) -> str:
+    """C:\\path -> /mnt/c/path for a Linux subprocess launched through WSL."""
+    m = re.match(r"^([A-Za-z]):[\\/](.*)$", p or "")
+    if m:
+        return "/mnt/%s/%s" % (m.group(1).lower(), m.group(2).replace("\\", "/"))
+    return (p or "").replace("\\", "/")
+
+
+def _python_extractor() -> list:
+    """Command prefix for the bundled pypff extractor (Windows -> WSL)."""
+    tool = os.getenv("PST_PYEXTRACT") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "tools", "pst_extract.py")
+    if not os.path.isfile(tool):
+        return None
+    wsl = shutil.which("wsl.exe") or shutil.which("wsl")
+    if not wsl:
+        return None
+    return [wsl, "-e", "python3", _wsl_path(tool)]
 
 
 def extract_pst(fname: str, raw: bytes = None, path: str = None):
@@ -65,7 +87,8 @@ def extract_pst(fname: str, raw: bytes = None, path: str = None):
         raise ParseError("empty")
 
     exe = shutil.which("readpst")
-    if not exe:
+    pycmd = None if exe else _python_extractor()
+    if not exe and not pycmd:
         raise ParseError("readpst_missing")
 
     max_msgs = _pst_int("PST_MAX_MSGS", 1000)
@@ -80,11 +103,15 @@ def extract_pst(fname: str, raw: bytes = None, path: str = None):
                 fh.write(raw)
         out = os.path.join(tmp, "out")
         os.makedirs(out)
-        # Fixed argv, no shell (Node parity). A .cmd/.bat stub on Windows still
-        # needs cmd.exe to be executable.
-        cmd = [exe, "-r", "-e", "-q", "-o", out, src_path]
-        if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
-            cmd = ["cmd", "/c"] + cmd
+        if exe:
+            # Fixed argv, no shell (Node parity). A .cmd/.bat stub on Windows
+            # still needs cmd.exe to be executable.
+            cmd = [exe, "-r", "-e", "-q", "-o", out, src_path]
+            if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
+                cmd = ["cmd", "/c"] + cmd
+        else:
+            cmd = pycmd + [_wsl_path(src_path), _wsl_path(out),
+                           "--max-msgs", str(max_msgs)]
         try:
             # stdin=DEVNULL: an encrypted PST must fail fast instead of hanging
             # forever on a password prompt that can never be answered.
