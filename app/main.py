@@ -701,11 +701,18 @@ async def analyze(request: Request, files: list[UploadFile] | None = File(None))
 async def cases(request: Request, q: str = "", limit: int = 100):
     s = require_auth(request)
     con = connect()
+    # Same projection as the Node server: the history table shows format/count/
+    # score/verdict, which live inside the stored result JSON, not in columns.
+    fields = """id, ts, user, file, sha256,
+        CASE WHEN json_valid(result) THEN json_extract(result,'$.format') END AS format,
+        CASE WHEN json_valid(result) THEN json_extract(result,'$.count') END AS count,
+        CASE WHEN json_valid(result) THEN json_extract(result,'$.score') END AS score,
+        CASE WHEN json_valid(result) THEN json_extract(result,'$.verdict') END AS verdict"""
     if s["role"] == "admin":
-        rows = con.execute("SELECT id,ts,user,file,sha256 FROM cases WHERE file LIKE ? OR user LIKE ? OR id LIKE ? ORDER BY ts DESC LIMIT ?",
+        rows = con.execute(f"SELECT {fields} FROM cases WHERE file LIKE ? OR user LIKE ? OR id LIKE ? ORDER BY ts DESC LIMIT ?",
                            (f"%{q}%", f"%{q}%", f"%{q}%", limit)).fetchall()
     else:
-        rows = con.execute("SELECT id,ts,user,file,sha256 FROM cases WHERE user=? AND (file LIKE ? OR id LIKE ?) ORDER BY ts DESC LIMIT ?",
+        rows = con.execute(f"SELECT {fields} FROM cases WHERE user=? AND (file LIKE ? OR id LIKE ?) ORDER BY ts DESC LIMIT ?",
                            (s["user"], f"%{q}%", f"%{q}%", limit)).fetchall()
     con.close(); return {"cases": [dict(r) for r in rows]}
 
