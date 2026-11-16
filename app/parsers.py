@@ -7,7 +7,7 @@ pipeline then runs on each .eml. Errors bubble up as :class:`ParseError` with
 the same stable codes as the Node server (``readpst_missing`` / ``pst_timeout``
 / ``readpst_failed`` / ``format_mismatch`` / ``empty``).
 """
-import email, re, mailbox, io, os, shutil, subprocess, tempfile
+import email, json, re, mailbox, io, os, shutil, subprocess, tempfile
 from email import policy
 from email.parser import BytesParser
 from email.utils import parseaddr, parsedate_to_datetime
@@ -115,8 +115,10 @@ def extract_pst(fname: str, raw: bytes = None, path: str = None):
         try:
             # stdin=DEVNULL: an encrypted PST must fail fast instead of hanging
             # forever on a password prompt that can never be answered.
-            proc = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                  stderr=subprocess.DEVNULL, timeout=timeout)
+            # Capture the extractor's one-line JSON summary so its cap (true
+            # message count / truncated flag) reaches the case result.
+            proc = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, timeout=timeout)
         except subprocess.TimeoutExpired:
             raise ParseError("pst_timeout")
         except FileNotFoundError:
@@ -134,6 +136,12 @@ def extract_pst(fname: str, raw: bytes = None, path: str = None):
         paths.sort()
 
         msgs, total, truncated = [], 0, False
+        if not exe:
+            try:
+                summary = json.loads((proc.stdout or b"").decode("utf-8", "replace").strip().splitlines()[-1])
+                truncated = bool(summary.get("truncated"))
+            except Exception:
+                pass
         for fpath in paths:
             try:
                 with open(fpath, "rb") as fh:
