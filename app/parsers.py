@@ -7,7 +7,7 @@ pipeline then runs on each .eml. Errors bubble up as :class:`ParseError` with
 the same stable codes as the Node server (``readpst_missing`` / ``pst_timeout``
 / ``readpst_failed`` / ``format_mismatch`` / ``empty``).
 """
-import email, json, re, mailbox, io, os, shutil, subprocess, tempfile
+import email, json, re, mailbox, io, os, shutil, subprocess, sys, tempfile
 from email import policy
 from email.parser import BytesParser
 from email.utils import parseaddr, parsedate_to_datetime
@@ -43,12 +43,14 @@ def _wsl_path(p: str) -> str:
 
 
 def _python_extractor() -> list:
-    """Command prefix for the bundled pypff extractor (Windows -> WSL)."""
+    """Command prefix for the bundled pypff extractor (WSL on Windows, native on Linux)."""
     tool = os.getenv("PST_PYEXTRACT") or os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "tools", "pst_extract.py")
     if not os.path.isfile(tool):
         return None
+    if os.name != "nt":
+        return [sys.executable or "python3", tool]
     wsl = shutil.which("wsl.exe") or shutil.which("wsl")
     if not wsl:
         return None
@@ -103,29 +105,48 @@ def extract_pst(fname: str, raw: bytes = None, path: str = None):
                 fh.write(raw)
         out = os.path.join(tmp, "out")
         os.makedirs(out)
+        # Convert paths only when the extractor really runs inside WSL; a
+        # native/custom extractor (PST_PYEXTRACT) gets plain local paths.
+        uses_wsl = bool(pycmd) and "wsl" in os.path.basename(pycmd[0]).lower()
         if exe:
             # Fixed argv, no shell (Node parity). A .cmd/.bat stub on Windows
             # still needs cmd.exe to be executable.
             cmd = [exe, "-r", "-e", "-q", "-o", out, src_path]
             if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
                 cmd = ["cmd", "/c"] + cmd
-        else:
+        elif uses_wsl:
             cmd = pycmd + [_wsl_path(src_path), _wsl_path(out),
-                           "--max-msgs", str(max_msgs)]
+                           "--max-msgs", str(max_msgs), "--max-bytes", str(max_bytes)]
+        else:
+            cmd = pycmd + [src_path, out, "--max-msgs", str(max_msgs),
+                           "--max-bytes", str(max_bytes)]
         try:
             # stdin=DEVNULL: an encrypted PST must fail fast instead of hanging
             # forever on a password prompt that can never be answered.
             # Capture the extractor's one-line JSON summary so its cap (true
             # message count / truncated flag) reaches the case result.
             proc = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE, timeout=timeout)
+                                  stderr=subprocess.DEVNULL, timeout=timeout)
         except subprocess.TimeoutExpired:
             raise ParseError("pst_timeout")
         except FileNotFoundError:
             raise ParseError("readpst_missing")
         except OSError:
             raise ParseError("readpst_failed")
+        summary = None
+        if not exe:
+            try:
+                lines = [ln for ln in (proc.stdout or b"").decode("utf-8", "replace").splitlines()
+                         if ln.strip()]
+                summary = json.loads(lines[-1]) if lines else None
+            except Exception:
+                summary = None
         if proc.returncode != 0:
+            code = (summary or {}).get("error")
+            if code in ("bad_signature", "input_unreadable"):
+                raise ParseError("format_mismatch")
+            if code == "wsl_unavailable":
+                raise ParseError("readpst_missing")
             raise ParseError("readpst_failed")
 
         paths = []
@@ -137,11 +158,9 @@ def extract_pst(fname: str, raw: bytes = None, path: str = None):
 
         msgs, total, truncated = [], 0, False
         if not exe:
-            try:
-                summary = json.loads((proc.stdout or b"").decode("utf-8", "replace").strip().splitlines()[-1])
-                truncated = bool(summary.get("truncated"))
-            except Exception:
-                pass
+            if summary and summary.get("error"):
+                raise ParseError("readpst_failed")
+            truncated = bool((summary or {}).get("truncated"))
         for fpath in paths:
             try:
                 with open(fpath, "rb") as fh:

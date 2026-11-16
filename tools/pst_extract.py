@@ -7,16 +7,21 @@ message so the existing Mailsleuth per-message pipeline (headers, SPF/DKIM/
 DMARC, URLs, attachments, scoring) can run unchanged.
 
 Usage:
-    python3 pst_extract.py INPUT.pst OUTPUT_DIR [--max-msgs N] [--stats PATH]
+    python3 pst_extract.py INPUT.pst OUTPUT_DIR [--max-msgs N] [--max-bytes N]
+                           [--stats PATH]
 
-The script re-execs itself once with PYTHONPATH/LD_LIBRARY_PATH pointing at a
-user-local libpff/pypff installation (no root needed).
+On Windows the script delegates itself to WSL (paths are translated to
+/mnt/<drive>/...). On Linux it re-execs once with PYTHONPATH/LD_LIBRARY_PATH
+pointing at a user-local libpff/pypff installation (no root needed).
+All diagnostics go to stderr; stdout is reserved for one JSON summary line.
 """
 import argparse
-import hashlib
+import importlib.util
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 
@@ -25,9 +30,64 @@ DEFAULT_ROOTS = [
     "/mnt/d/Digital Forensics/DE/pst_tools/root",
     "/mnt/c/Digital Forensics/DE/pst_tools/root",
 ]
+PST_MAGIC = b"!BDN"
+
+
+def _win_to_wsl_path(p: str) -> str:
+    m = re.match(r"^([A-Za-z]):[\\/](.*)$", p or "")
+    if m:
+        return "/mnt/%s/%s" % (m.group(1).lower(), m.group(2).replace("\\", "/"))
+    return (p or "").replace("\\", "/")
+
+
+def _emit_error(code: str, detail: str = "") -> None:
+    print(json.dumps({"error": code, "detail": detail[:300]}), flush=True)
+
+
+def _maybe_delegate_windows():
+    """When launched by Windows Python, re-exec the script inside WSL."""
+    if os.name != "nt" or os.getenv("PST_SKIP_WSL_DELEGATE") == "1":
+        return
+    wsl = shutil.which("wsl.exe") or shutil.which("wsl")
+    if not wsl:
+        _emit_error("wsl_unavailable", "wsl.exe not found on PATH")
+        raise SystemExit(3)
+    try:
+        probe = subprocess.run([wsl, "-e", "true"], stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=15)
+        if probe.returncode != 0:
+            raise RuntimeError("WSL returned %d" % probe.returncode)
+    except Exception as exc:
+        _emit_error("wsl_unavailable", str(exc))
+        raise SystemExit(3)
+    script = _win_to_wsl_path(os.path.abspath(__file__))
+    args = [_win_to_wsl_path(a) if re.match(r"^[A-Za-z]:[\\/]", a) else a
+            for a in sys.argv[1:]]
+    try:
+        # Do NOT exec: a broken WSL can crash with 0xC0000005 and swallow our
+        # structured error. subprocess keeps this Python process alive.
+        proc = subprocess.run([wsl, "-e", "python3", script] + args,
+                              stdin=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if proc.returncode != 0:
+            detail = (proc.stderr or b"").decode("utf-8", "replace").strip()
+            _emit_error("wsl_failed", detail or "wsl exited %d" % proc.returncode)
+            raise SystemExit(3)
+        raise SystemExit(0)
+    except SystemExit:
+        raise
+    except Exception as exc:
+        _emit_error("wsl_unavailable", str(exc))
+        raise SystemExit(3)
 
 
 def _ensure_libs():
+    # Native installation (or an injected test module) needs no bootstrap.
+    try:
+        if importlib.util.find_spec("pypff") is not None:
+            return
+    except Exception:
+        pass
     roots = [os.environ.get("PST_PYFF_ROOT", "")] + DEFAULT_ROOTS
     for root in roots:
         if not root or not os.path.isdir(root):
@@ -44,7 +104,8 @@ def _ensure_libs():
         env["PYTHONPATH"] = os.pathsep.join([sp] + [p for p in cur_path if p])
         env["LD_LIBRARY_PATH"] = os.pathsep.join([ld] + [p for p in cur_ld if p])
         os.execve(sys.executable, [sys.executable] + sys.argv, env)
-    raise SystemExit("pypff_not_found: set PST_PYFF_ROOT to a libpff/pypff root")
+    _emit_error("pypff_not_found", "set PST_PYFF_ROOT to a libpff/pypff root")
+    raise SystemExit(4)
 
 
 def _b(v):
@@ -131,17 +192,33 @@ def main():
     ap.add_argument("input")
     ap.add_argument("output")
     ap.add_argument("--max-msgs", type=int, default=1000)
+    ap.add_argument("--max-bytes", type=int, default=200 * 1024 * 1024)
     ap.add_argument("--stats", default="")
     args = ap.parse_args()
 
     t0 = time.time()
+    try:
+        with open(args.input, "rb") as fh:
+            if fh.read(4) != PST_MAGIC:
+                _emit_error("bad_signature", "not a PST/OST (expected !BDN)")
+                raise SystemExit(2)
+    except OSError as exc:
+        _emit_error("input_unreadable", str(exc))
+        raise SystemExit(2)
     import pypff  # noqa: E402  (only after lib bootstrap)
-
-    pst = pypff.file()
-    pst.open(args.input)
-    os.makedirs(args.output, exist_ok=True)
+    try:
+        pst = pypff.file()
+        pst.open(args.input)
+    except Exception as exc:
+        _emit_error("pst_open_failed", str(exc))
+        raise SystemExit(4)
+    try:
+        os.makedirs(args.output, exist_ok=True)
+    except OSError as exc:
+        _emit_error("output_unwritable", str(exc))
+        raise SystemExit(4)
     folder_counts, dates, files = {}, [], []
-    state = {"n": 0, "trunc": False, "att": 0, "bytes": 0, "cap_bytes": 200 * 1024 * 1024}
+    state = {"n": 0, "trunc": False, "att": 0, "bytes": 0, "cap_bytes": args.max_bytes}
 
     def walk(folder, path):
         if state["trunc"]:
@@ -200,6 +277,7 @@ def main():
         "folders": len(folder_counts),
         "folder_counts": folder_counts,
         "attachments": state["att"],
+        "eml_bytes": state["bytes"],
         "truncated": state["trunc"],
         "date_min": min(dates) if dates else None,
         "date_max": max(dates) if dates else None,
@@ -214,5 +292,6 @@ def main():
 
 
 if __name__ == "__main__":
+    _maybe_delegate_windows()
     _ensure_libs()
     main()
