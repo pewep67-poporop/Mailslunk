@@ -234,6 +234,8 @@ const I18N = {
     e_auth: 'Session expired — please log in again.',
     e_csrf: 'Session expired — please log in again.',
     e_not_found: 'Endpoint not found (server/client version mismatch).',
+    e_disk_full: 'Not enough free disk space to stage this upload — free space on the server drive, or set MS_TMPDIR to a drive with room.',
+    e_http_error: 'The server rejected the request before the files were read — check the server log for the real cause.',
     e_unknown: 'Error: '
   },
   vi: {
@@ -458,6 +460,8 @@ const I18N = {
     e_auth: 'Phiên đã hết hạn — vui lòng đăng nhập lại.',
     e_csrf: 'Phiên đã hết hạn — vui lòng đăng nhập lại.',
     e_not_found: 'Không tìm thấy endpoint (lệch phiên bản server/client).',
+    e_disk_full: 'Không đủ dung lượng ổ đĩa trống để tải tệp lên — hãy giải phóng dung lượng ổ đĩa máy chủ, hoặc đặt MS_TMPDIR trỏ tới ổ đĩa còn chỗ.',
+    e_http_error: 'Máy chủ từ chối yêu cầu trước khi đọc tệp — xem log máy chủ để biết nguyên nhân thật.',
     e_unknown: 'Lỗi: '
   }
 };

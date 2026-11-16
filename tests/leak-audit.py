@@ -121,8 +121,19 @@ except Exception as e:
     ok("kiểm tra uploads được", False, e)
 
 print("\n[7] Không có nội dung thư trong log/tệp tạm của hệ thống")
-tmp = Path(os.getenv("TEMP") or "/tmp")
-scratch = [x.name for x in tmp.glob("ms-pst-*")] + [x.name for x in tmp.glob("ms-mbox-*")]
+# temp may be %TEMP% or DATA_DIR/tmp (setup_tmpdir picks the roomiest drive) — check both
+_candidates = [Path(os.getenv("TEMP") or "/tmp")]
+try:
+    from app.db import tmp_dir as _app_tmp
+    _candidates.append(Path(_app_tmp()))
+except Exception:
+    pass
+scratch = []
+for _t in dict.fromkeys(_candidates):
+    try:
+        scratch += [x.name for x in _t.glob("ms-pst-*")] + [x.name for x in _t.glob("ms-mbox-*")]
+    except OSError:
+        pass
 ok("không còn thư mục tạm của parser", not scratch, scratch[:5])
 
 print(f"\n{p}/{p + f} PASS  (leak audit)")

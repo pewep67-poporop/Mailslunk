@@ -1,5 +1,5 @@
 """SQLite storage — mirror server/db.js schema (users, audit, cases, kv)."""
-import os, sqlite3, threading
+import os, shutil, sqlite3, tempfile, threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,9 +8,55 @@ def data_dir() -> Path:
     p = os.getenv("DATA_DIR", str(ROOT / "data"))
     d = Path(p)
     d.mkdir(parents=True, exist_ok=True, mode=0o700)
-    for sub in ("uploads", "evidence", "messages"):
+    for sub in ("uploads", "evidence", "messages", "tmp"):
         (d / sub).mkdir(parents=True, exist_ok=True, mode=0o700)
     return d
+
+def tmp_dir() -> Path:
+    """Scratch dir for multipart staging + readpst output.
+
+    Override with MS_TMPDIR; otherwise DATA_DIR/tmp (created by data_dir()).
+    """
+    p = os.getenv("MS_TMPDIR")
+    d = Path(p) if p else data_dir() / "tmp"
+    try:
+        d.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except OSError:
+        d = Path(tempfile.gettempdir())
+    return d
+
+def setup_tmpdir() -> Path:
+    """Point tempfile at the roomiest drive, NOT blindly at %TEMP%.
+
+    Starlette spools every uploaded file into a SpooledTemporaryFile that rolls
+    over to disk after 1 MB — i.e. into %TEMP%. When that drive is full the
+    write raises ENOSPC *while FastAPI is parsing the body*, FastAPI wraps it
+    into a generic 400 "There was an error parsing the body", and the UI ends up
+    showing a meaningless "http_error" for files that were never analyzed.
+
+    Picking the roomiest of (MS_TMPDIR | DATA_DIR/tmp, %TEMP%) keeps a full OS
+    drive from killing the whole batch. Call once at startup.
+    """
+    forced = os.getenv("MS_TMPDIR")
+    if forced:
+        chosen = Path(forced)
+    else:
+        sys_tmp = Path(tempfile.gettempdir())
+        mine = data_dir() / "tmp"
+
+        def free(p: Path) -> int:
+            try:
+                return shutil.disk_usage(p).free
+            except OSError:
+                return -1
+
+        chosen = mine if free(mine) >= free(sys_tmp) else sys_tmp
+    try:
+        chosen.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except OSError:
+        chosen = Path(tempfile.gettempdir())
+    tempfile.tempdir = str(chosen)
+    return chosen
 
 def db_path() -> Path:
     return data_dir() / "app.db"

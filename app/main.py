@@ -7,7 +7,7 @@ Mirrors public contract of ../mailsleuth/server/index.js:
   /api/report/{id}, /api/settings/map, /api/admin/logs, /api/admin/sessions
 Static UI served from ../public (copy) on /.
 """
-import os, hashlib, time, secrets, json, uuid, re
+import os, errno, hashlib, time, secrets, json, uuid, re
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
@@ -22,7 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 import bcrypt
 
 from . import auth as A
-from .db import connect, init_db, log, kv_get, kv_set, data_dir
+from .db import connect, init_db, log, kv_get, kv_set, data_dir, setup_tmpdir, tmp_dir
 from .parsers import load_messages, extract_pst, ParseError, EXT_RE
 from .enrichment import geo_lookup, confidence, classify_server, score
 from .dns_real import lookup_domain, lookup_auth, normalize_domain, reverse_ptr as dns_reverse
@@ -47,6 +47,13 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app):
     # startup: init DB schema + bootstrap admin (replaces deprecated on_event for FastAPI >= 0.120 / Py 3.14)
+    # Stage multipart/readpst scratch on the roomiest drive FIRST: Starlette spills
+    # uploads to %TEMP% after 1 MB, and a full OS drive otherwise kills the batch
+    # with a masked "http_error".
+    try:
+        app.state.tmpdir = str(setup_tmpdir())
+    except Exception:
+        app.state.tmpdir = None
     init_db(); A.init_admin()
     # self-healing watchdog (see _watchdog_loop) - disabled with WATCHDOG_INTERVAL=0
     try:
@@ -80,6 +87,18 @@ async def flat_http_error(request: Request, exc: StarletteHTTPException):
     else:
         code = "not_found" if exc.status_code == 404 else "http_error"
         body = {"detail": str(detail)}
+        # FastAPI wraps ANY exception raised while reading the body into a bare
+        # 400 "There was an error parsing the body" (fastapi/routing.py:284) and
+        # parks the real one in __cause__. Surface it: a full disk must read as
+        # "disk_full", not as a meaningless "http_error" the operator cannot act on.
+        cause = exc.__cause__
+        if isinstance(cause, OSError) and getattr(cause, "errno", None) in (
+            errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)
+        ):
+            code = "disk_full"
+            body["detail"] = f"{cause} (temp={tmp_dir()})"
+        elif cause is not None and not str(detail):
+            body["detail"] = f"{type(cause).__name__}: {cause}"
     body["error"] = code
     return JSONResponse(body, status_code=exc.status_code)
 
