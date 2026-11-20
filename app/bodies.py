@@ -1,14 +1,16 @@
 """Message body previews (M8 — storage for the per-message detail view).
 
-The UI lists every message of a case (EML/MBOX/MSG/PST) and, when the analyst
-expands one, asks the server for its body. Bodies are therefore written to disk
-next to the case instead of being embedded in the SQLite row, so a 1000-message
-mailbox never turns into one multi-megabyte JSON document.
+The UI lists every message of a case (EML/MBOX/MSG/TXT/Maildir) and, when the
+analyst expands one, asks the server for its headers and body. Bodies are
+therefore written to disk next to the case instead of being embedded in the
+SQLite row, so a 1000-message mailbox never turns into one multi-megabyte JSON
+document.
 
 Layout (DATA_DIR/messages/<case_id>/):
-    <idx>.txt   plain-text body (UTF-8)
-    <idx>.html  sanitised HTML body
-    <idx>.json  meta: hasText/hasHtml/truncated/omitted/textBytes/htmlBytes
+    <idx>.hdr  raw header block (UTF-8, capped)
+    <idx>.txt  plain-text body (UTF-8)
+    <idx>.html sanitised HTML body
+    <idx>.json meta: hasText/hasHtml/truncated/omitted/textBytes/htmlBytes
 
 Limits mirror the Node server (server/messages.js):
     BODY_MAX_BYTES   512 KB per message
@@ -176,6 +178,34 @@ def extract_bodies(name: str, raw: bytes) -> tuple:
     return text, html
 
 
+def extract_headers(name: str, raw: bytes, limit: int = 64 * 1024) -> str:
+    """Return the literal header block (evidence, not a reconstruction).
+
+    MSG files expose their headers through extract-msg; everything else is
+    parsed headersonly so body bytes never influence the result.
+    """
+    low = (name or "").lower()
+    if low.endswith(".msg"):
+        try:
+            import extract_msg
+            import io as _io
+            with _io.BytesIO(raw) as fh:
+                m = extract_msg.MessageMessage(fh)
+                pairs = []
+                for k, v in (m.header.items() if hasattr(m, "header") else []):
+                    pairs.append(f"{k}: {v}")
+                return "\n".join(pairs)[:limit]
+        except Exception:
+            return ""
+    try:
+        from email import policy
+        from email.parser import BytesParser
+        msg = BytesParser(policy=policy.default).parsebytes(raw, headersonly=True)
+        return "\n".join(f"{k}: {v}" for k, v in msg.items())[:limit]
+    except Exception:
+        return ""
+
+
 def _slice_bytes(s: str, max_bytes: int) -> str:
     """Cut a string to at most max_bytes UTF-8 bytes without breaking a char."""
     if not s or max_bytes <= 0:
@@ -237,6 +267,9 @@ def save_bodies(case_id: str, items: list) -> list:
         idx, name, raw = item
         body = build_body(name, raw, budget)
         try:
+            headers = extract_headers(name, raw)
+            if headers:
+                (d / f"{idx}.hdr").write_text(headers, encoding="utf-8")
             if body["text"]:
                 (d / f"{idx}.txt").write_text(body["text"], encoding="utf-8")
             if body["html"]:
@@ -270,8 +303,9 @@ def read_body(case_id: str, index: int) -> dict:
     d = case_dir(case_id)
     txt = d / f"{index}.txt"
     htm = d / f"{index}.html"
+    hdr = d / f"{index}.hdr"
     meta_path = d / f"{index}.json"
-    if not txt.exists() and not htm.exists():
+    if not txt.exists() and not htm.exists() and not hdr.exists():
         return None
     meta = {}
     try:
@@ -281,6 +315,7 @@ def read_body(case_id: str, index: int) -> dict:
         meta = {}
     return {
         "index": index,
+        "headers": hdr.read_text(encoding="utf-8", errors="ignore") if hdr.exists() else "",
         "text": txt.read_text(encoding="utf-8", errors="ignore") if txt.exists() else "",
         "html": htm.read_text(encoding="utf-8", errors="ignore") if htm.exists() else "",
         "hasText": txt.exists(),
@@ -313,16 +348,11 @@ def rebuild_body(case_id: str, index: int, evidence: bytes, fmt: str) -> dict:
     SQLite row was copied without DATA_DIR/messages), the message is parsed
     again from the forensic copy.
     """
-    from .parsers import extract_pst, iter_mbox_messages, ParseError
+    from .parsers import iter_mbox_messages
     name = f"{case_id}.eml"
     raw = evidence
     low = (fmt or "").lower()
-    if low in ("pst", "ost"):
-        items, _ = extract_pst(name, raw)
-        if index < 0 or index >= len(items):
-            return None
-        name, raw = items[index]
-    elif low == "mbox":
+    if low == "mbox":
         parts = []
         for m in iter_mbox_messages(raw):
             try:
@@ -338,6 +368,9 @@ def rebuild_body(case_id: str, index: int, evidence: bytes, fmt: str) -> dict:
     body = build_body(name, raw, budget)
     d = case_dir(case_id)
     d.mkdir(parents=True, exist_ok=True)
+    headers = extract_headers(name, raw)
+    if headers:
+        (d / f"{index}.hdr").write_text(headers, encoding="utf-8")
     if body["text"]:
         (d / f"{index}.txt").write_text(body["text"], encoding="utf-8")
     if body["html"]:

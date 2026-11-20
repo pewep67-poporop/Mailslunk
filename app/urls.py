@@ -87,7 +87,11 @@ def analyze_url(url: str) -> dict:
         if brand in host:
             risk += 30; reasons.append(f"brand '{brand}' appears in non-official domain {host}")
             break
+        # Short labels such as "mail", "pr" or "aol" are ordinary words; only
+        # compare brand-length tokens to avoid the old false positives.
         for tok in main_labels:
+            if len(brand) < 5 or len(tok) < 5:
+                continue
             d = _lev(tok, brand)
             if 0 < d <= 2 and len(tok) <= len(brand) + 3:
                 risk += 35; lookalike = True
@@ -106,26 +110,34 @@ def analyze_url(url: str) -> dict:
 
 
 def _bodies(raw: bytes):
-    """Collect text + html bodies from an EML (and text URLs inside HTML)."""
+    """Collect text + html bodies from an EML (and text URLs inside HTML).
+
+    A plain .txt upload is not an EML: when parsing yields no MIME parts the
+    decoded bytes are scanned as one text body.
+    """
     texts, htmls = [], []
     try:
         msg = BytesParser(policy=policy.default).parsebytes(raw)
+        for part in msg.walk():
+            if part.get_content_maintype() == "multipart": continue
+            if part.get_content_disposition() == "attachment":
+                fn = part.get_filename() or ""
+                if fn.lower().endswith((".html", ".htm")):
+                    try: htmls.append(part.get_content())
+                    except Exception: pass
+                continue
+            ct = part.get_content_type()
+            try:
+                if ct == "text/plain": texts.append(part.get_content())
+                elif ct in ("text/html", "application/xhtml+xml"): htmls.append(part.get_content())
+            except Exception:
+                pass
     except Exception:
-        return texts, htmls
-    for part in msg.walk():
-        if part.get_content_maintype() == "multipart": continue
-        if part.get_content_disposition() == "attachment":
-            fn = part.get_filename() or ""
-            if fn.lower().endswith((".html", ".htm")):
-                try: htmls.append(part.get_content())
-                except Exception: pass
-            continue
-        ct = part.get_content_type()
-        try:
-            if ct == "text/plain": texts.append(part.get_content())
-            elif ct in ("text/html", "application/xhtml+xml"): htmls.append(part.get_content())
-        except Exception:
-            pass
+        pass
+    if not texts and not htmls:
+        text = raw[:2 * 1024 * 1024].decode("utf-8", "replace")
+        if text.strip():
+            texts.append(text)
     return texts, htmls
 
 

@@ -1,229 +1,157 @@
-# Mailslunk
+# MailSleuth Python (`mailsleuth_python`)
 
-> **MailSleuth — bản Python (FastAPI) song song với bản Node.js.**
-> Phát triển lại toàn bộ pipeline điều tra email: header forensics, SPF/DKIM/DMARC,
-> SMTP routing, phishing URL, malware attachment, IOC, body preview, reputation,
-> AI/ML — trong khi **bản Node.js gốc (`../mailsleuth`) giữ nguyên 100%**.
+MailSleuth Python là bản **FastAPI** để phân tích/pháp chứng email (song song với bản Node gốc trong `../mailsleuth`, không thay thế). Hệ thống tập trung vào phân tích header/xác thực thư/định tuyến/URL/đính kèm, trích xuất chứng cứ, báo cáo có **chữ ký toàn vẹn SHA-256 (mộc số)**, và vận hành **offline-safe** (không bản đồ ngoài, AI chỉ local).
 
----
+> Trạng thái: mã nguồn hiện tại trên nhánh `main` (đã nâng cấp streaming, quản trị/phân quyền, URL intel, đồ thị chứng cứ, map nội bộ, báo cáo đa ngôn ngữ).
 
-## TOC / Mục lục
+## Tính năng chính
 
-- [Overview / Tổng quan](#overview)
-- [Capabilities / Năng lực](#capabilities)
-- [Project structure / Cấu trúc dự án](#project-structure)
-- [Quick start / Cài đặt nhanh](#quick-start)
-- [Environment variables / Biến môi trường](#environment-variables)
-- [Main API / API chính](#main-api)
-- [Testing / Kiểm thử](#testing)
-- [Screenshots / Hình ảnh](#screenshots)
-- [Deployment / Kịch bản triển khai](#deployment)
-- [License / Bản quyền & ghi chú](#license)
+- **Định dạng nhập**: `.eml`, `.emlx`, `.mht/.mhtml`, `.msg`, `.mbox/.mbx`, `.txt` và cây thư mục **Maildir** (phát hiện theo nội dung, kể cả file không phần mở rộng). `PST/OST` **không** được phân tích trực tiếp trên server: điều tra viên trích xuất ra EML/MBOX/Maildir bằng công cụ ngoài (readpst/Outlook) rồi nạp vào hệ thống.
+- **Phân tích pháp chứng**: header (H-*), xác thực SPF/DKIM/DMARC & alignment (A-*), tái dựng định tuyến Received/hop (R-*), URL/phishing (U-*), tệp đính kèm/mã độc/hoạt động nguy hiểm & cách ly (A-*), IOC, điểm & verdict.
+- **Streaming từng tệp** (`POST /api/analyze/stream`, NDJSON): tiến độ theo giai đoạn thực, hiển thị 3 dòng trạng thái + thanh biên độ + %, **Pause** (dừng sau tệp hiện tại), **Stop** (dừng lô nhưng giữ kết quả đã xong), **Cancel** (hủy và bỏ kết quả lô); lỗi dừng đúng tệp/vị trí và báo rõ.
+- **Nền tảng & client**: nhận diện/ghi nhận nền tảng Windows/Linux (chọn hoặc auto) và client/nguồn (Outlook, Exchange, Thunderbird, Apple Mail, Gmail, Maildir, mbox, RFC822/EML...).
+- **Báo cáo & toàn vẹn**: HTML/PDF/CSV/JSON theo ngôn ngữ `en/vi`; thống kê IP, DNS, SPF/DKIM/DMARC, routing, URL, IOC, đính kèm, đồ thị; **chữ ký SHA-256** trên dữ liệu vụ việc (fingerprint tái lập được) + **mộc số/con dấu** góc dưới bên phải; xác minh `GET /api/report/{id}/verify`. CSV trung hòa công thức (chống CSV injection).
+- **URL intel (offline/local)**: xuất URL theo target/nguồn; nhập CSV/JSON/XML/TXT để **tái phân tích một lần** bằng rule/mẫu local và gộp verdict/rủi ro/lý do vào vụ việc (`/api/urls/import`), sau đó tái ký.
+- **Đồ thị chứng cứ**: sơ đồ liên kết thực thể (message, tác nhân/địa chỉ, domain, IP, URL, tệp đính kèm/hash) dựng **chỉ từ chứng cứ** có trong kết quả, không suy diễn (`/api/case/{id}/graph`, `.svg`).
+- **Bản đồ nội bộ**: bản đồ lược đồ (schematic) vẽ cục bộ từ tọa độ GeoLite2 của IP/Received — **không tile/không dịch vụ bản đồ ngoài**.
+- **Local AI (tùy chọn)**: chỉ endpoint OpenAI-compatible trên localhost/private (`LLM_ALLOW_REMOTE=0` mặc định), endpoint cloud bị từ chối; LLM chỉ được **nâng** mức nghi ngờ, không hạ verdict rule; trích dẫn phải khớp nguyên văn.
+- **Tài khoản & phân quyền**: user (bcrypt, uid hex32 bất biến, SĐT, Key ID khôi phục một lần, đổi tên bằng token một lần do admin cấp); admin đăng nhập bằng mật khẩu, khóa/verifier tạo offline bằng `tools/admin_keygen.py` (PBKDF2-HMAC-SHA256 từ `password + SHA-256(username|CCCD)`, không lưu CCCD); tab Administration/Logs chỉ admin; chống leo thang ngang/dọc, CSRF cho thao tác ghi.
+- **Giao diện**: 9 tab (Analysis, Results, Guide, History, DNS, IP-Geo, Local AI, Administration, Logs), dark/night, cảnh báo viền phát sáng (đỏ/vàng/xanh), card nền tảng Windows/Linux, xem header/body từng thư, export/import có chọn vị trí.
 
----
+## Sơ đồ kiến trúc
 
-## Overview / Tổng quan
+```mermaid
+flowchart TB
+  subgraph Client["Trình duyệt (SPA - public/index.html, app.js, app.css)"]
+    Tabs[9 tab: Analysis/Results/Guide/History/DNS/IP-Geo/Local AI/Admin/Logs]
+    Stream[Streaming NDJSON client\n3 dòng + biên độ + % | Pause/Stop/Cancel]
+    View[Results: Overview/Messages/URLs/Graph\nHeader/Body | Report/Verify | Export/Import]
+  end
 
-**Mailslunk** là bản nâng cấp / song song codebase **Python (FastAPI)** cho hệ thống
-MailSleuth — một công cụ phân tích email chuyên nghiệp dùng cho **digital forensics** và
-**cyber threat intelligence** nội bộ.
+  subgraph API["FastAPI (app/main.py)"]
+    Sec[Auth + session/CSRF + RBAC\nownership theo cases.uid]
+    Analyze[/api/analyze/stream + /api/analyze/]
+    Case[/api/cases, /api/case/*, /api/report/*, /api/urls/*, /api/map/]
+    Admin[/api/admin/*, /api/profile/*, /api/settings/llm/]
+  end
 
-| | Node.js (gốc) | Python (Mailslunk) |
-|---|---|---|
-| Trạng thái | **90% giữ nguyên** | **100% song song** |
-| PST/OST | `readpst` qua child_process | `readpst` subprocess + magic `!BDN` |
-| Body preview (M8) | – | `data/messages/<case_id>/` + endpoint |
-| Auth rewrite (M2) | – | pyspf + dkimpy + DMARC full |
-| Reputation (M9) | – | URLhaus/VirusTotal/Safe Browsing |
-| AI/ML (M10–M11) | – | sklearn + ONNX / LLM |
+  subgraph Core["Pipeline & mô-đun (app/)"]
+    Parse[parsers/bodies: EML/MSG/MBOX/Maildir/TXT\nclient & platform]
+    Forensic[headers, authcheck, routing, urls, attachments, ioc]
+    Enrich[enrichment, dns_real (tùy chọn)\nGeoLite2 local]
+    Intel[urlintel: rule local, import/merge\nCSV formula-safe]
+    Viz[graph: entity/edge từ chứng cứ\nmapgen: schematic nội bộ]
+    Rep[report: HTML/PDF/CSV/JSON\ncase_signature SHA-256 + seal]
+    LLM[llm: endpoint local-only, redact\nchỉ nâng nghi ngờ]
+  end
 
-Server Python là **drop-in** cho pipeline: cùng schema SQLite (`users`, `cases`,
-`audit`, `kv`), cùng evidence layout (`evidence/`, `quarantine/`, `messages/`).
+  subgraph Store["Lưu trữ (DATA_DIR)"]
+    DB[(SQLite WAL: users/cases/audit/kv\nsessions/session_signatures/url_imports)]
+    FS[(evidence/*.bin, messages/<case>/\nquarantine/, uploads/tmp/reports)]
+    Geo[(GeoLite2 *.mmdb - local)]
+  end
 
----
-
-## Capabilities / Năng lực
-
-### Module điều tra
-
-1. **Header forensics** (`H-xxx`) — From/Return-Path, Reply-To, Message-ID,
-   header lặp, display-name spoof, lệch múi giờ Date/Received.
-2. **SPF / DKIM / DMARC xác thực thực tế** (`A-xxx`) — pyspf + dkimpy trên raw
-   evidence; DMARC policy + alignment; tự tra khóa DKIM; upstream AR.
-3. **SMTP routing** (`R-xxx`) — theo từng hop, delay, vòng lặp, missing From,
-   private IP hop.
-4. **Phishing URL** (`U-xxx`) — IP-host, punycode/homoglyph, lookalike brand
-   (Levenshtein), bait keyword, URLhaus blocklist.
-5. **Malware attachment** (`A-xxx`) — hash MD5/SHA1/SHA256, magic vs MIME,
-   EICAR, zip bomb, VBA macro (olevba), PDF active content, quarantine.
-6. **IOC** — JSON / CSV defang / **STIX 2.1** export.
-
-### Module mở rộng
-
-7. **Xem nội dung thư (M8)** — body text + HTML đã khử XSS lưu trong
-   `data/messages/<case_id>/{idx}.{txt,html,json}`; endpoint
-   `GET /api/case/{case_id}/message/{idx}`.
-8. **Reputation (M9, tắt mặc định)** — URLhaus · VirusTotal (hash-lookup) ·
-   Google Safe Browsing. Chỉ URL/SHA-256 rời khỏi máy; key per-user trong `kv`;
-   circuit breaker khi provider lỗi.
-9. **Bộ phân loại AI đã train (M10, tắt mặc định)** — 58 feature từ M1–M6 →
-   `mlScore` + `topFactors`; model sai schema bị từ chối nạp; chỉ **nâng** cảnh báo,
-   không hạ kết luận rule.
-10. **Đánh giá ngữ nghĩa LLM (M11, tắt mặc định)** — nhiệm vụ ý định + giải thích;
-    trích dẫn bằng chứng phải khớp nguyên văn; nội dung gửi đi được ẩn danh.
-
-### Gửi SIEM (M7)
-
-- **Wazuh** — syslog RFC 5424 + CEF, UDP/514 push.
-- **Elastic** — `_bulk` NDJSON ECS.
-- **Splunk** — HEC (`mailsleuth` sourcetype).
-- Export 6 định dạng: JSON / CSV / ECS / CEF / RFC5424 / STIX.
-
-### Tài liệu
-
-- Báo cáo HTML EN/VI 9 mục + CSV 23 cột.
-- Bản đồ OSM 5.5cm + MapGlot (per-user key).
-
----
-
-## Project structure / Cấu trúc dự án
-
-```
-mailslunk/
-├── app/            # FastAPI backend (Python)
-│   ├── main.py             # core pipeline, endpoints, health, watchdog
-│   ├── headers.py          # M1 header forensics (H-xxx)
-│   ├── authcheck.py        # M2 SPF/DKIM/DMARC (A-xxx)
-│   ├── routing.py          # M3 SMTP routing (R-xxx)
-│   ├── urls.py             # M4 phishing URL (U-xxx)
-│   ├── attachments.py      # M5 malware attachment (A-xxx)
-│   ├── ioc.py              # IOC (JSON/CSV/STIX)
-│   ├── bodies.py           # M8 body preview
-│   ├── reputation.py       # M9 threat feeds
-│   ├── ml.py               # M10 inference
-│   ├── ml_features.py     # M10 feature vector (58 feature)
-│   ├── llm.py              # M11 semantic layer
-│   ├── siem.py             # M7 SIEM export
-│   ├── report.py           # HTML/CSV báo cáo
-│   └── db.py               # SQLite storage
-├── public/         # Frontend (vanilla JS + HTML/CSS)
-│   └── img/        # Hình ảnh nền / nhân vật
-├── tests/          # 13 bộ kiểm thử (12 PASS + ML e2e)
-├── tools/          # train / build features / verify / deploy / purge / fetch
-├── deploy/         # systemd unit hardened
-├── data/           # runtime storage (gitignored)
-├── Dockerfile
-├── requirements.txt
-├── README.md
-└── HUONG_DAN_SETUP_PYTHON.md
+  Client <-->|HTTPS/HTTP + cookie sid + x-csrf| API
+  Analyze --> Parse --> Forensic --> Enrich
+  Forensic --> Intel --> Rep
+  Enrich --> Viz --> Rep
+  LLM -. optional .-> Forensic
+  API <--> Core
+  Core <--> DB
+  Core <--> FS
+  Enrich --> Geo
 ```
 
----
+## Luồng xử lý (tóm tắt)
 
-## Quick start / Cài đặt nhanh
+```mermaid
+flowchart LR
+  A[Chọn tệp/thư mục\n+ nền tảng] --> B[Preflight & upload tuần tự]
+  B --> C[/analyze/stream: receive→parse→analyze→store/]
+  C --> D[Trích header/body/đính kèm/URL/IP]
+  D --> E[Header/Auth/DNS Routing URL Attachment IOC\n+ điểm/verdict]
+  E --> F[GeoIP local + map nội bộ\n+ đồ thị thực thể]
+  F --> G[Ký SHA-256 + lưu case (uid)\nevidence + bodies]
+  G --> H[UI: Results/Messages/URLs/Graph\nReport HTML/PDF/CSV + Verify]
+  H --> I[Export/Import URL\nrule local → merge → re-sign]
+```
 
-```bash
+> Mô hình dữ liệu logic: **vụ việc/case** (sở hữu `uid`) → **messages** (nội dung/header/body, lưu `data/messages/<case>/`) → **entities** (actor/domain/IP/URL/attachment/hash) → **links/quan hệ** (CONTAINS/SENT/ORIGIN_IP/CONTAINS_URL/HAS_ATTACHMENT…), thể hiện qua `result.graph` và `/api/case/{id}/graph(.svg)`.
+
+## Cài đặt nhanh
+
+Yêu cầu: Python 3.10+ (khuyến nghị 3.12). GeoLite2 đặt tại `GEOIP_DIR` (mặc định `../mailsleuth/geoip`).
+
+```powershell
+cd "D:\Digital Forensics\mailsleuth_python"
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-uvicorn app.main:app --host 127.0.0.1 --port 8000
-# UI: http://127.0.0.1:8000   |   API docs: /api/docs
+copy .env.example .env
 ```
 
-Linux (systemd):
+Khởi tạo quản trị viên (khuyến nghị, offline — **không** lưu CCCD): 
 
-```bash
-sudo cp deploy/mailsleuth.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now mailsleuth
+```powershell
+python tools/admin_keygen.py --user admin --cccd <CCCD> --write-db --key-out .\admin.key
 ```
 
-Yêu cầu: `sudo apt install pst-utils` (bản Linux cần `readpst` thật).
+Chạy server:
 
----
+```powershell
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+# http://127.0.0.1:8000
+```
 
-## Environment variables / Biến môi trường
+> `ADMIN_PASS` trong `.env` chỉ là bootstrap legacy/dev (nếu chưa có admin). Nên enroll bằng `admin_keygen.py` và bỏ/không dùng `ADMIN_PASS` ở môi trường thật.
 
-| Variable / Biến | Default / Mặc định | Description / Mô tả |
+## Biến môi trường (chính)
+
+Xem đầy đủ trong `.env.example`.
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---:|---|
+| `PORT` | 8000 | Cổng HTTP |
+| `DATA_DIR` | ./data | DB, evidence, messages, quarantine, uploads/tmp/reports |
+| `GEOIP_DIR` | ../mailsleuth/geoip | Thư mục GeoLite2 `.mmdb` |
+| `LIVE_DNS` | 0 | Tra DNS thật (SPF/DKIM/DMARC) — `0` = offline-safe |
+| `COOKIE_SECURE` | 0 | Đặt `1` khi chạy HTTPS |
+| `LLM_ENABLED` | 0 | Bật Local AI (per-user cấu hình trong UI/kv) |
+| `LLM_BASE_URL` | http://127.0.0.1:11434/v1 | Endpoint local OpenAI-compatible |
+| `LLM_ALLOW_REMOTE` | 0 | `0` chặn endpoint không phải localhost/private |
+| `BODY_MAX_BYTES` / `BODY_TOTAL_BYTES` | 512KB / 32MB | Giới hạn lưu body/thu và/vụ việc |
+
+## API chính (rút gọn)
+
+| Method | Path | Mô tả |
 |---|---|---|
-| `ADMIN_PASS` | `ChangeMe-Admin-123456` | Mật khẩu admin (đổi trước khi deploy) |
-| `DATA_DIR` | `./data` | Thư mục dữ liệu runtime |
-| `GEOIP_DIR` | `../mailsleuth/geoip` | GeoLite2 |
-| `LIVE_DNS` | `1` | Bật tra DNS thật cho SPF/DKIM/DMARC |
-| `LIVE_DNS_DOMAINS` | `5` | Số domain / bộ duy nhất |
-| `GEO_IPS` | `20` | Số IP cần geo |
-| `COOKIE_SECURE` | `0` | Secure cookie (HTTPS) |
-| `REPUTATION_ENABLED` | `0` | Bật M9 |
-| `ML_ENABLED` | `0` | Bật M10 |
-| `LLM_ENABLED` | `0` | Bật M11 |
-| `BREAKER_FAIL_THRESHOLD` | `5` | Circuit breaker |
-| `WATCHDOG_INTERVAL` / `WATCHDOG_FAILS` | `60` / `3` | Watchdog tự phục hồi |
+| POST | `/api/register`, `/api/login`, `/api/recover` | Đăng ký/đăng nhập (username|SĐT|uid)/khôi phục bằng Key ID |
+| GET/POST | `/api/profile*`, `/api/profile/rename` | Hồ sơ, avatar, đổi tên (cần token một lần) |
+| POST | `/api/analyze/stream` | Phân tích 1 tệp, trả NDJSON tiến độ + kết quả |
+| POST | `/api/analyze` | Phân tích nhiều tệp (batch) |
+| GET | `/api/cases` | Lịch sử vụ việc (theo sở hữu uid; admin xem tất cả) |
+| GET | `/api/case/{id}/message/{idx}` | Header/body đã lưu/khử nguy hiểm |
+| GET | `/api/case/{id}/urls(.csv)` | URL theo target + verdict |
+| POST | `/api/urls/import` | Import & tái phân tích URL local, merge vào case, tái ký |
+| GET | `/api/case/{id}/graph(.svg)` | Đồ thị thực thể từ chứng cứ |
+| GET | `/api/report/{id}` (+`.pdf`,`.csv`), `/verify` | Báo cáo & xác minh chữ ký SHA-256 |
+| POST | `/api/dns`, `/api/ip`, GET `/api/map` | Tra cứu/DNS/Geo (local) & bản đồ nội bộ |
+| GET/POST | `/api/settings/llm` | Cấu hình Local AI (per-user, che key) |
+| GET/POST | `/api/admin/*` | Quản trị (admin): users/stats/logs/sessions, cấp token đổi tên |
 
-Xem `HUONG_DAN_SETUP_PYTHON.md` đầy đủ.
+## Kiểm thử & kiểm tra nhanh
 
----
-
-## Main API / API chính
-
-| Method | Path | Description / Mô tả |
-|---|---|---|
-| POST | `/api/analyze` | Upload + phân tích (PST/MBOX/EML/MSG/TXT) |
-| GET | `/api/cases` | Lịch sử case |
-| GET | `/api/case/{id}/message/{idx}` | Body preview M8 |
-| GET | `/api/settings/reputation` | Trạng thái reputation M9 |
-| GET | `/api/health?deep=1` | Health deep (components, breakers, ML) |
-| GET | `/api/export/siem?...` | Export SIEM |
-| POST | `/api/report` | Báo cáo HTML/CSV |
-
-Xem đầy đủ trong `/api/docs` khi chạy server.
-
----
-
-## Testing / Kiểm thử
-
-```bash
-# chạy TOÀN BỘ bộ kiểm thử (12 bộ, ~346 assert)
-powershell -ExecutionPolicy Bypass -File tests\run-all.ps1
+```powershell
+python -m py_compile app\main.py app\report.py app\urlintel.py app\parsers.py app\db.py app\auth.py app\mapgen.py app\graph.py
+node --check public\app.js
+# Audit/script có sẵn trong tests/, tools/
 ```
 
-Các bộ: PST/OST, backend regress, avatar API/UI, UI controls, audit, auth M2,
-layers (breaker/ML/LLM), **leak-audit**, **resilience**, **ML e2e**, auth live API.
+## Bảo mật & ghi chú
 
----
+- Mặc định **offline-safe** (`LIVE_DNS=0`, không bản đồ/AI ngoài). Key/secret lưu per-user trong `kv`, không echo/log; CCCD **không** được lưu.
+- Báo cáo trả về kèm CSP chặt (`default-src 'none'`), `nosniff`, `no-referrer`, `no-store`. HTML body hiển thị qua sanitize + sandbox.
+- Chữ ký SHA-256 là **dấu vân tay toàn vẹn dữ liệu** (tái lập/kiểm chứng), không phải chữ ký số khóa bí mật.
+- Pipeline rule là nền tảng; ML/LLM (nếu bật) chỉ hỗ trợ/nâng cảnh báo theo ràng buộc, không tự ý suy diễn danh tính trong đồ thị.
 
-## Screenshots / Hình ảnh
-
-<p align="center">
-  <img src="public/img/detective.jpg" width="480" alt="Mailslunk detective" />
-</p>
-
-<p align="center">
-  <img src="public/img/matrix-code.jpg" width="480" alt="Mailslunk matrix" />
-</p>
-
-<p align="center">
-  <img src="public/img/detective-lens.png" width="480" alt="Mailslunk lens" />
-</p>
-
-<p align="center">
-  <img src="public/img/detective-clean.png" width="480" alt="Mailslunk clean" />
-</p>
-
----
-
-## Deployment / Kịch bản triển khai
-
-1. Cài `pst-utils` trên Linux: `sudo apt install pst-utils`.
-2. Copy unit: `sudo cp deploy/mailsleuth.service /etc/systemd/system/`.
-3. Đặt `ADMIN_PASS` thật, bật `LIVE_DNS=1`, cấu hình key reputation/LLM.
-4. Bật tầng cần thiết: `ML_ENABLED=1`, `LLM_ENABLED=1`, `REPUTATION_ENABLED=1`.
-
----
-
-## License / Bản quyền & ghi chú
-
-- Pipeline rule là **deterministic** — ML/LLM chỉ **nâng** cảnh báo.
-- Không rò dữ liệu: reputation chỉ gửi URL/SHA-256; LLM payload được ẩn danh;
-  feature vector không chứa chuỗi thô.
-- Vệ sinh dấu vết: `python tools/purge.py --apply --days 30`.
-
----
-
-*Mailslunk — v2.2 — 13/11/2026*
+Xem hướng dẫn chi tiết: `HUONG_DAN_SETUP_PYTHON.md`. Kế hoạch & trạng thái: `KE_HOACH_NANG_CAP_DIEU_TRA.md`.

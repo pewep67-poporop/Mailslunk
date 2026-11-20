@@ -1,187 +1,37 @@
-"""Parsers — EML/MBOX/TXT via stdlib email; PST/OST via an external extractor.
+"""Parsers — EML/MBOX/MSG/TXT and Linux Maildir-style messages.
 
-PST/OST is never parsed in-process. Either libpst's ``readpst`` (Linux/Docker)
-or the bundled Python extractor ``tools/pst_extract.py`` (pypff, runs in WSL)
-writes one .eml per message into a private temp dir; the normal per-message
-pipeline then runs on each .eml. Errors bubble up as :class:`ParseError` with
-the same stable codes as the Node server (``readpst_missing`` / ``pst_timeout``
-/ ``readpst_failed`` / ``format_mismatch`` / ``empty``).
+PST/OST is deliberately **not** parsed here. The investigator extracts mail
+with an external tool (readpst/libpst, Outlook export, etc.) and imports the
+resulting EML/MBOX/Maildir tree. This keeps the server free of native PST
+dependencies and of the old WSL/pypff bridge.
+
+Format detection is content-aware so extensionless Maildir files
+(``cur/1712345678.M123P456.host``) are accepted as individual messages.
 """
-import email, json, re, mailbox, io, os, shutil, subprocess, sys, tempfile
+import email
+import mailbox
+import os
+import re
+import tempfile
 from email import policy
 from email.parser import BytesParser
-from email.utils import parseaddr, parsedate_to_datetime
 import ipaddress as ipmod
 
-EXT_RE = re.compile(r"\.(eml|msg|mbox|pst|ost|emlx|mht|mhtml|txt)$", re.I)
-BIG = {".pst", ".ost"}
-PST_MAGIC = b"!BDN"
+EXT_RE = re.compile(r"\.(eml|emlx|mht|mhtml|msg|mbox|mbx|txt)$", re.I)
 _IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_FORMAT_BY_EXT = {
+    ".eml": "eml", ".emlx": "eml", ".mht": "eml", ".mhtml": "eml",
+    ".msg": "msg", ".mbox": "mbox", ".mbx": "mbox", ".txt": "txt",
+}
 
 
 class ParseError(Exception):
-    """Stable error code consumed by /api/analyze (mirrors Node error strings)."""
+    """Stable error code consumed by /api/analyze."""
 
     def __init__(self, code: str):
         super().__init__(code)
         self.code = code
 
-
-def _pst_int(name: str, default: int) -> int:
-    try:
-        return max(1, int(os.getenv(name, str(default))))
-    except Exception:
-        return default
-
-
-def _wsl_path(p: str) -> str:
-    """C:\\path -> /mnt/c/path for a Linux subprocess launched through WSL."""
-    m = re.match(r"^([A-Za-z]):[\\/](.*)$", p or "")
-    if m:
-        return "/mnt/%s/%s" % (m.group(1).lower(), m.group(2).replace("\\", "/"))
-    return (p or "").replace("\\", "/")
-
-
-def _python_extractor() -> list:
-    """Command prefix for the bundled pypff extractor (WSL on Windows, native on Linux)."""
-    tool = os.getenv("PST_PYEXTRACT") or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "tools", "pst_extract.py")
-    if not os.path.isfile(tool):
-        return None
-    if os.name != "nt":
-        return [sys.executable or "python3", tool]
-    wsl = shutil.which("wsl.exe") or shutil.which("wsl")
-    if not wsl:
-        return None
-    return [wsl, "-e", "python3", _wsl_path(tool)]
-
-
-def extract_pst(fname: str, raw: bytes = None, path: str = None):
-    """Extract a PST/OST container to a list of (name, eml_bytes).
-
-    Returns ``(messages, truncated)``. Raises ParseError on every failure so the
-    API can answer with a machine-readable code instead of a stack trace.
-    Caps are env-tunable: PST_MAX_MSGS (1000), PST_MAX_BYTES (200 MB),
-    PST_TIMEOUT (300 s).
-
-    ``path`` lets the caller hand over a file on disk: a 500 MB PST is then
-    never loaded into RAM (readpst reads the file itself).
-    """
-    ext = os.path.splitext(fname or "")[1].lower()
-    if ext not in BIG:
-        raise ParseError("format_mismatch")
-    src_path = None
-    if path:
-        if not os.path.exists(path):
-            raise ParseError("format_mismatch")
-        with open(path, "rb") as fh:
-            head = fh.read(4)
-        if head != PST_MAGIC:
-            raise ParseError("format_mismatch")
-        src_path = path
-    else:
-        if not raw:
-            raise ParseError("empty")
-        if not raw.startswith(PST_MAGIC):
-            raise ParseError("format_mismatch")
-    if not raw and not src_path:
-        raise ParseError("empty")
-
-    exe = shutil.which("readpst")
-    pycmd = None if exe else _python_extractor()
-    if not exe and not pycmd:
-        raise ParseError("readpst_missing")
-
-    max_msgs = _pst_int("PST_MAX_MSGS", 1000)
-    max_bytes = _pst_int("PST_MAX_BYTES", 200 * 1024 * 1024)
-    timeout = _pst_int("PST_TIMEOUT", 300)
-
-    tmp = tempfile.mkdtemp(prefix="ms-pst-")
-    try:
-        if src_path is None:
-            src_path = os.path.join(tmp, "input" + (ext or ".pst"))
-            with open(src_path, "wb") as fh:
-                fh.write(raw)
-        out = os.path.join(tmp, "out")
-        os.makedirs(out)
-        # Convert paths only when the extractor really runs inside WSL; a
-        # native/custom extractor (PST_PYEXTRACT) gets plain local paths.
-        uses_wsl = bool(pycmd) and "wsl" in os.path.basename(pycmd[0]).lower()
-        if exe:
-            # Fixed argv, no shell (Node parity). A .cmd/.bat stub on Windows
-            # still needs cmd.exe to be executable.
-            cmd = [exe, "-r", "-e", "-q", "-o", out, src_path]
-            if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
-                cmd = ["cmd", "/c"] + cmd
-        elif uses_wsl:
-            cmd = pycmd + [_wsl_path(src_path), _wsl_path(out),
-                           "--max-msgs", str(max_msgs), "--max-bytes", str(max_bytes)]
-        else:
-            cmd = pycmd + [src_path, out, "--max-msgs", str(max_msgs),
-                           "--max-bytes", str(max_bytes)]
-        try:
-            # stdin=DEVNULL: an encrypted PST must fail fast instead of hanging
-            # forever on a password prompt that can never be answered.
-            # Capture the extractor's one-line JSON summary so its cap (true
-            # message count / truncated flag) reaches the case result.
-            proc = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            raise ParseError("pst_timeout")
-        except FileNotFoundError:
-            raise ParseError("readpst_missing")
-        except OSError:
-            raise ParseError("readpst_failed")
-        summary = None
-        if not exe:
-            try:
-                lines = [ln for ln in (proc.stdout or b"").decode("utf-8", "replace").splitlines()
-                         if ln.strip()]
-                summary = json.loads(lines[-1]) if lines else None
-            except Exception:
-                summary = None
-        if proc.returncode != 0:
-            code = (summary or {}).get("error")
-            if code in ("bad_signature", "input_unreadable"):
-                raise ParseError("format_mismatch")
-            if code == "wsl_unavailable":
-                raise ParseError("readpst_missing")
-            raise ParseError("readpst_failed")
-
-        paths = []
-        for root, _dirs, files in os.walk(out):
-            for name in files:
-                if name.lower().endswith(".eml"):
-                    paths.append(os.path.join(root, name))
-        paths.sort()
-
-        msgs, total, truncated = [], 0, False
-        if not exe:
-            if summary and summary.get("error"):
-                raise ParseError("readpst_failed")
-            truncated = bool((summary or {}).get("truncated"))
-        for fpath in paths:
-            try:
-                with open(fpath, "rb") as fh:
-                    data = fh.read()
-            except OSError:
-                continue
-            if len(msgs) >= max_msgs:
-                truncated = True
-                break
-            if msgs and total + len(data) > max_bytes:
-                truncated = True
-                break
-            if len(data) > max_bytes:
-                truncated = True
-            total += len(data)
-            msgs.append((os.path.basename(fpath), data))
-        if not msgs:
-            raise ParseError("empty")
-        return msgs, truncated
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
 
 def is_private(ip: str) -> bool:
     try:
@@ -190,31 +40,127 @@ def is_private(ip: str) -> bool:
     except Exception:
         return True
 
+
 def extract_ips(headers_text: str):
     ips = []
     for h in re.findall(r"(?im)^Received:.*", headers_text or ""):
         for ip in _IP_RE.findall(h):
-            if is_private(ip): continue
-            if ip not in ips: ips.append(ip)
+            if is_private(ip):
+                continue
+            if ip not in ips:
+                ips.append(ip)
     return ips
+
+
+def _header_text(msg) -> str:
+    try:
+        return "\n".join(f"{k}: {v}" for k, v in msg.items())
+    except Exception:
+        return ""
+
+
+def _body_text(msg, limit: int = 8192) -> str:
+    """Plain-text preview that also works for multipart/mixed messages."""
+    try:
+        if not msg.is_multipart():
+            payload = msg.get_payload(decode=True)
+            if payload:
+                return payload[:limit].decode(msg.get_content_charset() or "utf-8", "replace")
+        # Prefer text/plain, then text/html (tags stripped minimally).
+        for want in ("text/plain", "text/html"):
+            for part in msg.walk():
+                if part.get_content_maintype() == "multipart":
+                    continue
+                if part.get_content_type() != want:
+                    continue
+                if part.get_content_disposition() == "attachment":
+                    continue
+                payload = part.get_payload(decode=True)
+                if not payload:
+                    continue
+                text = payload[:limit].decode(part.get_content_charset() or "utf-8", "replace")
+                if want == "text/html":
+                    text = re.sub(r"(?is)<(script|style).*?</\1>", " ", text)
+                    text = re.sub(r"(?s)<[^>]+>", " ", text)
+                    text = re.sub(r"\s+", " ", text)
+                return text
+    except Exception:
+        pass
+    return ""
+
 
 def parse_eml_bytes(raw: bytes) -> dict:
     msg = BytesParser(policy=policy.default).parsebytes(raw)
-    headers = "\n".join(f"{k}: {v}" for k, v in msg.items())
-    origin = extract_ips(headers)
+    headers = _header_text(msg)
     return {
-        "from": str(msg.get("From", "")), "to": str(msg.get("To", "")),
-        "subject": str(msg.get("Subject", "")), "date": str(msg.get("Date", "")),
-        "message_id": str(msg.get("Message-ID", "")), "originIPs": origin,
-        "replyTo": str(msg.get("Reply-To", "")), "returnPath": str(msg.get("Return-Path", "")),
-        "body": msg.get_payload(decode=True)[:4096].decode("utf-8", "ignore") if msg.get_payload(decode=True) else "",
+        "from": str(msg.get("From", "")),
+        "to": str(msg.get("To", "")),
+        "cc": str(msg.get("Cc", "")),
+        "bcc": str(msg.get("Bcc", "")),
+        "subject": str(msg.get("Subject", "")),
+        "date": str(msg.get("Date", "")),
+        "message_id": str(msg.get("Message-ID", "")),
+        "originIPs": extract_ips(headers),
+        "replyTo": str(msg.get("Reply-To", "")),
+        "returnPath": str(msg.get("Return-Path", "")),
+        "body": _body_text(msg),
     }
+
+
+def parse_text_bytes(raw: bytes) -> dict:
+    """A .txt may be a saved EML or plain prose; support both."""
+    head = raw[:8192].decode("utf-8", "replace")
+    if re.search(r"(?im)^(from|received|return-path|subject|date|message-id):", head):
+        try:
+            return parse_eml_bytes(raw)
+        except Exception:
+            pass
+    return {
+        "from": "", "to": "", "cc": "", "bcc": "",
+        "subject": "(plain text)", "date": "", "message_id": "",
+        "originIPs": extract_ips(head), "replyTo": "", "returnPath": "",
+        "body": head[:8192],
+    }
+
+
+def detect_client(name: str, raw: bytes) -> dict:
+    """Identify the mail platform from the file name and real headers only.
+
+    Returns {"key", "label"} where key is one of outlook, exchange, thunderbird,
+    apple, gmail, maildir, mbox, generic. No guessing from body text.
+    """
+    low = (name or "").lower()
+    if low.endswith(".msg"):
+        return {"key": "outlook", "label": "Microsoft Outlook (MSG)"}
+    if "/cur/" in low.replace("\\", "/") or "/new/" in low.replace("\\", "/"):
+        return {"key": "maildir", "label": "Linux Maildir"}
+    try:
+        msg = BytesParser(policy=policy.default).parsebytes(raw, headersonly=True)
+        h = {str(k).lower(): str(v) for k, v in msg.items()}
+    except Exception:
+        h = {}
+    xm = (h.get("x-mailer") or "").lower()
+    ua = (h.get("user-agent") or "").lower()
+    if "microsoft outlook" in xm or "microsoft outlook" in ua or "x-ms-exchange" in " ".join(h):
+        return {"key": "outlook", "label": "Microsoft Outlook"}
+    if h.get("x-ms-exchange-organization-authas") or h.get("x-ms-exchange-antispam-message-info"):
+        return {"key": "exchange", "label": "Microsoft Exchange"}
+    if "thunderbird" in xm or "thunderbird" in ua:
+        return {"key": "thunderbird", "label": "Mozilla Thunderbird"}
+    if "apple" in xm or "mail.app" in xm or "mac os x" in xm:
+        return {"key": "apple", "label": "Apple Mail"}
+    if "gmail" in xm or "google" in xm:
+        return {"key": "gmail", "label": "Gmail"}
+    if h.get("x-mailer") or h.get("user-agent"):
+        return {"key": "generic", "label": (h.get("x-mailer") or h.get("user-agent"))[:80]}
+    return {"key": "generic", "label": "RFC 822 / EML"}
+
 
 def iter_mbox_messages(raw: bytes):
     """Yield email.message objects from raw MBOX bytes.
 
-    mailbox.mbox needs a real path (it does not accept a file-like object), so
-    the upload is staged in a private temp file and deleted when iteration ends.
+    mailbox.mbox needs a real path, so the upload is staged in a private temp
+    file and removed when iteration ends.
     """
     fd, path = tempfile.mkstemp(prefix="ms-mbox-", suffix=".mbox")
     try:
@@ -227,36 +173,67 @@ def iter_mbox_messages(raw: bytes):
         finally:
             mbox.close()
     finally:
-        try: os.unlink(path)
-        except OSError: pass
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def parse_mbox_bytes(raw: bytes) -> list:
     out = []
     for m in iter_mbox_messages(raw):
-        headers = "\n".join(f"{k}: {v}" for k, v in m.items())
         try:
             msg_raw = m.as_bytes()
         except Exception:
             msg_raw = raw
-        out.append({"from": str(m.get("From","")), "subject": str(m.get("Subject","")),
-                    "date": str(m.get("Date","")), "originIPs": extract_ips(headers),
-                    "_raw": msg_raw})
+        try:
+            item = parse_eml_bytes(msg_raw)
+        except Exception:
+            item = {"from": str(m.get("From", "")), "to": str(m.get("To", "")),
+                    "subject": str(m.get("Subject", "")), "date": str(m.get("Date", "")),
+                    "message_id": str(m.get("Message-ID", "")),
+                    "originIPs": extract_ips(_header_text(m)), "body": ""}
+        item["_raw"] = msg_raw
+        out.append(item)
     return out
 
-def parse_text_bytes(raw: bytes) -> dict:
-    return parse_eml_bytes(raw)
+
+def sniff_format(name: str, raw: bytes) -> str:
+    """Return eml|mbox|msg|txt, or '' when the bytes are not a mail message."""
+    ext = os.path.splitext((name or "").lower())[1]
+    if ext in _FORMAT_BY_EXT:
+        return _FORMAT_BY_EXT[ext]
+    if ext:
+        return ""
+    head = (raw or b"")[:65536]
+    if head.startswith(b"From ") and b"\nFrom:" in head:
+        return "mbox"
+    low = head.lower()
+    if (b"\nfrom:" in low or b"\nreceived:" in low or b"\nreturn-path:" in low
+            or b"\nsubject:" in low or b"\ndate:" in low):
+        return "eml"
+    if head and b"\x00" not in head[:4096]:
+        return "txt"
+    return ""
+
 
 def load_messages(name: str, raw: bytes) -> list:
-    low = name.lower()
-    if low.endswith(".mbox"): return parse_mbox_bytes(raw)
-    if low.endswith(".msg"):
+    fmt = sniff_format(name, raw)
+    if fmt == "mbox":
+        return parse_mbox_bytes(raw)
+    if fmt == "msg":
         import io as _io
         import extract_msg
         with _io.BytesIO(raw) as f:
             m = extract_msg.MessageMessage(f)
             headers = "\n".join(str(v) for v in m.header.values()) if hasattr(m, "header") else ""
-            return [{"from": str(m.sender or ""), "subject": str(m.subject or ""),
-                     "originIPs": extract_ips(headers)}]
-    if low.endswith(".txt"): return [parse_text_bytes(raw)]
-    return [parse_eml_bytes(raw)]
+            return [{"from": str(m.sender or ""), "to": str(m.to or ""),
+                     "cc": str(m.cc or ""), "bcc": str(m.bcc or ""),
+                     "subject": str(m.subject or ""), "date": str(m.date or ""),
+                     "message_id": "", "originIPs": extract_ips(headers),
+                     "replyTo": "", "returnPath": "", "body": str(m.body or "")[:8192]}]
+    if fmt == "txt":
+        return [parse_text_bytes(raw)]
+    if fmt == "eml":
+        return [parse_eml_bytes(raw)]
+    raise ParseError("format_mismatch")

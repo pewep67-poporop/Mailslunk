@@ -1,22 +1,18 @@
-"""M11 — Optional LLM layer: semantic assessment of a message.
+"""M11 — Optional **local** LLM layer.
 
-Why: rules cannot judge intent ("urgent invoice from the CFO"), brand
-impersonation tone, or a Vietnamese business-email lure. An LLM can - but it
-must never be the only basis of a forensic verdict.
+Only an OpenAI-compatible endpoint on the local machine (Ollama, llama.cpp,
+LM Studio, vLLM) is supported. There is no cloud provider list and no default
+API key: when the endpoint is absent the server stays fully rule-based.
 
 Contract:
-  * **OFF by default** (`LLM_ENABLED=0`); without a key or without network the
-    server degrades to rule-only.
+  * **OFF by default** (`LLM_ENABLED=0`).
   * **The LLM may only raise suspicion**, never lower a rule verdict.
-  * **Hallucination control**: every quote the model returns must be a literal
-    substring of the body we sent. A quote that does not match invalidates the
-    whole answer (it is dropped, not softened).
-  * **Reproducibility**: the case record stores model id, prompt version,
-    prompt hash, temperature, timestamp and token usage.
-  * **Data minimisation**: only headers + body text are sent (no attachments,
-    no binaries). `LLM_REDACT=1` (default) replaces domains, IP addresses,
-    e-mail addresses and URLs with stable placeholders before sending.
-  * Key is per-user in `kv` (never echoed, never logged).
+  * **Hallucination control**: every quote must be a literal substring of the
+    body sent; otherwise the answer is discarded.
+  * **Data minimisation**: only headers + body text leave the process, and
+    `LLM_REDACT=1` replaces e-mails, IPs, domains and URLs first.
+  * The endpoint is validated by the API (loopback/private only unless
+    `LLM_ALLOW_REMOTE=1`), which blocks SSRF.
 """
 import hashlib
 import json
@@ -26,15 +22,14 @@ import time
 
 from .breaker import CircuitOpen, get_breaker
 
-PROMPT_VERSION = "m11-v1"
-MODEL_DEFAULT = os.getenv("LLM_MODEL", "openrouter/minimax/minimax-m3.1-flash")
-MODEL_ESCALATE = os.getenv("LLM_MODEL_ESCALATE", "openrouter/anthropic/claude-sonnet-5.5")
-MODEL_FREE = os.getenv("LLM_MODEL_FREE", "openrouter/openrouter/free")
-BASE_URL = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
-TIMEOUT = float(os.getenv("LLM_TIMEOUT", "45") or 45)
+PROMPT_VERSION = "m11-local-v1"
+MODEL_DEFAULT = os.getenv("LLM_MODEL", "qwen2.5:7b")
+BASE_URL = os.getenv("LLM_BASE_URL", "http://127.0.0.1:11434/v1")
+TIMEOUT = float(os.getenv("LLM_TIMEOUT", "60") or 60)
 MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "600") or 600)
 REDACT = os.getenv("LLM_REDACT", "1") != "0"
 CACHE_TTL = int(os.getenv("LLM_CACHE_TTL", "86400") or 86400)
+ALLOW_REMOTE = os.getenv("LLM_ALLOW_REMOTE", "0") == "1"
 
 _cache = {}
 
@@ -54,8 +49,38 @@ _SYS_PROMPT = (
 )
 
 
-def enabled() -> bool:
-    return os.getenv("LLM_ENABLED", "0") == "1"
+def _kv(user: str, name: str) -> str:
+    if not user:
+        return ""
+    try:
+        from .db import kv_get
+        return (kv_get(f"llm.{name}:{user}") or "").strip()
+    except Exception:
+        return ""
+
+
+def base_url(user: str = "") -> str:
+    return _kv(user, "base") or BASE_URL
+
+
+def model_name(user: str = "") -> str:
+    return _kv(user, "model") or MODEL_DEFAULT
+
+
+def enabled(user: str = "") -> bool:
+    flag = _kv(user, "enabled")
+    if flag in ("0", "false", "False"):
+        return False
+    if flag in ("1", "true", "True"):
+        return bool(base_url(user).strip())
+    return os.getenv("LLM_ENABLED", "0") == "1" and bool(base_url(user).strip())
+
+
+def _endpoint(base: str = "") -> str:
+    b = (base or base_url()).strip().rstrip("/")
+    if b.endswith("/chat/completions"):
+        return b
+    return b + "/chat/completions"
 
 
 def _key(user: str = "") -> str:
@@ -142,17 +167,17 @@ def _validate(answer: dict, body: str) -> tuple:
     return out, True
 
 
-def _call_model(prompt: str, model: str, key: str) -> tuple:
+def _call_model(prompt: str, model: str, key: str, base: str = "") -> tuple:
     br = get_breaker("llm")
     payload = {"model": model,
                "messages": [{"role": "system", "content": _SYS_PROMPT},
                             {"role": "user", "content": prompt}],
                "temperature": 0, "max_tokens": MAX_TOKENS,
                "response_format": {"type": "json_object"}}
-    headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json",
-               "HTTP-Referer": os.getenv("LLM_REFERER", "http://localhost:8000"),
-               "X-Title": "MailSleuth"}
-    r = br.call(_requests().post, BASE_URL + "/chat/completions",
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = "Bearer " + key
+    r = br.call(_requests().post, _endpoint(base),
                 headers=headers, json=payload, timeout=TIMEOUT)
     j = r.json() if r.content else {}
     text = (j.get("choices") or [{}])[0].get("message", {}).get("content") or ""
@@ -167,11 +192,9 @@ def _requests():
 
 def assess(result: dict, raw_text: str = "", user: str = "") -> dict:
     """-> assessment dict (stored in the case) or {} when unavailable."""
-    if not enabled():
+    if not enabled(user):
         return {}
     key = _key(user)
-    if not key:
-        return {}
     prompt, facts = build_payload(result, raw_text)
     phash = hashlib.sha256((PROMPT_VERSION + "|" + prompt).encode()).hexdigest()[:16]
     ck = phash + "|" + hashlib.sha256(raw_text.encode("utf-8", "ignore")).hexdigest()
@@ -180,31 +203,30 @@ def assess(result: dict, raw_text: str = "", user: str = "") -> dict:
         return hit[1]
     body_for_check = raw_text or ""
     out = {}
-    for model in (MODEL_DEFAULT, MODEL_FREE, MODEL_ESCALATE):
-        try:
-            text, usage = _call_model(prompt, model, key)
-        except CircuitOpen:
-            continue
-        except Exception:
-            continue
+    model = model_name(user)
+    try:
+        text, usage = _call_model(prompt, model, key, base_url(user))
+    except CircuitOpen:
+        text, usage = "", {}
+    except Exception:
+        text, usage = "", {}
+    if text:
         raw_json = text.strip()
         if raw_json.startswith("```"):
             raw_json = re.sub(r"^```[a-zA-Z]*\s*", "", raw_json).replace("```", "")
         try:
             answer = json.loads(raw_json)
         except Exception:
-            continue
+            answer = {}
         clean, ok = _validate(answer, body_for_check)
-        if not ok:
-            continue
-        clean.update({"model": model, "promptVersion": PROMPT_VERSION,
-                      "promptHash": phash, "temperature": 0,
-                      "redacted": REDACT,
-                      "tokens": int(usage.get("total_tokens") or 0),
-                      "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                      "factsUsed": facts})
-        out = clean
-        break
+        if ok:
+            clean.update({"model": model, "promptVersion": PROMPT_VERSION,
+                          "promptHash": phash, "temperature": 0,
+                          "redacted": REDACT, "local": True,
+                          "tokens": int(usage.get("total_tokens") or 0),
+                          "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                          "factsUsed": facts})
+            out = clean
     if out:
         _cache[ck] = (time.time() + CACHE_TTL, out)
         if len(_cache) > 512:
