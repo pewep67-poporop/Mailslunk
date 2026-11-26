@@ -1,4 +1,4 @@
-"""Circuit breaker for outbound calls (reputation, LLM, DNS-over-HTTP).
+"""Circuit breaker (để lại cho dùng nội bộ; không còn outbound call trong forensic mode).
 
 Why: an external provider that starts failing must not turn into a latency
 bomb for our own requests. With a breaker the 4th consecutive failure opens the

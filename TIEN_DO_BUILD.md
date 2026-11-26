@@ -22,8 +22,8 @@ N1 ≥15 trang+TOC+tham khảo · N2 bảng kê+hash · N3 biên bản+timeline 
 L1 điểm theo quy trình/bằng chứng · L2 giải thích · L3 thiếu thì nêu giới hạn, không suy đoán.
 
 ## 3. Phase checklist (cập nhật trạng thái ở đây)
-- [ ] **GATE 0** — commit/push baseline mục 4 (`threatscan.py`, `rules/`, 10 file sửa); py_compile + node --check OK.
-- [ ] **GATE 0.5** — gỡ SIEM/reputation/LLM/ML/live DNS; chỉnh `requirements.txt`, `.env.example`, docs, tests.
+- [x] **GATE 0** — commit/push baseline mục 4 (`1480e2e`, sạch); py_compile + node --check OK.
+- [x] **GATE 0.5** — gỡ SIEM/reputation/LLM/ML/live DNS; `dns_local.py` stub offline; requirements/env/docs/tests đã chỉnh; compile OK.
 - [ ] **P1** — `analysis/rules/` dùng lib có sẵn + `tests/test_rules.py`; bỏ brand-lookalike/regex ad-hoc.
 - [ ] **P2** — `pipeline.py` chỉ điều phối nạp file/import dataset/xuất báo cáo; giữ auth/streaming.
 - [ ] **P3** — `dns_local.py` + `tools/dns_snapshot.py` + `tools/auth_dns_export.py` (SPF/DKIM/DMARC từ header AR trước, snapshot sau, không có → not_run).
@@ -54,6 +54,8 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 5. Khi hết token: để trạng thái rõ ràng ở mục 3 và dòng "Next action" bên dưới.
 
 ## 6. Nhật ký tiến độ
-- 2026-11-26: phê duyệt kế hoạch; tạo file bàn giao; bắt đầu GATE 0.
+- 2026-11-26: phê duyệt kế hoạch; tạo file bàn giao; GATE 0 xong (`1480e2e` đã push).
+- 2026-11-26: GATE 0.5 xong — xóa 6 module runtime + 8 tool/test ML/SIEM; `app/dns_local.py` stub offline; compile/import OK.
+- 2026-11-26: bắt đầu P1 — làm lại lớp rule phân tích bằng thư viện + rule file + unit test.
 
-**Next action:** chạy GATE 0 — commit baseline mục 4, push, tick `[x]`, rồi sang GATE 0.5.
+**Next action:** P1 — tạo `analysis/rules/indicators.json`, `tests/test_rules.py`, viết lại `urls.py`/`threatscan.py`/phần header Received bằng lib `bs4, defusedxml, oletools, pefile, urllib.parse, ipaddress`; bỏ brand-lookalike; chạy test.

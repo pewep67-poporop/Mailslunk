@@ -1,8 +1,8 @@
-"""M4 — Phishing URL analysis (offline heuristics; reputation APIs pluggable later).
+"""M4 - Phishing URL analysis (offline, rule-driven).
 
 Extracts URLs from plain-text bodies, HTML (href + text) and HTML attachments,
 then scores each one with deterministic heuristics. Finding ids are prefixed U-.
-Reputation (URLhaus/VT/Safe Browsing) is a stub on purpose: keys per-user will
+No reputation API is used.
 be wired in a later phase — no external call is made here.
 """
 import re, os, html as html_mod
@@ -12,7 +12,6 @@ from email.utils import parseaddr
 
 URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)[^\s<>\"'`)\]\\]+")
 HREF_RE = re.compile(r"(?i)href\s*=\s*[\"']([^\"']+)[\"']")
-MAX_REP_URLS = int(os.getenv("REPUTATION_MAX_URLS", "10") or 10)  # URLs sent to threat feeds
 BAIT = ("login", "verify", "secure", "update", "confirm", "account", "password",
         "otp", "wallet", "seed", "recover", "suspend", "unlock", "billing",
         "invoice", "payment", "gift", "bonus", "authenticate", "signin")
@@ -172,29 +171,7 @@ def analyze(raw: bytes, user: str = "") -> dict:
                          "severity": {0: "info", 1: "low", 2: "medium", 3: "high"}.get(int(sev)),
                          "type": ftype, "evidence": evidence[:300], "weight": weight})
 
-    # --- M9 reputation (off by default; only the URL leaves the server) ---
-    reputation = None
-    try:
-        from . import reputation as _rep
-        reputation = _rep
-    except Exception:
-        reputation = None
-    if reputation is not None and reputation.enabled():
-        for u in urls[:MAX_REP_URLS]:
-            try:
-                rep = reputation.check_url(u["url"], user)
-            except Exception:
-                continue
-            u["reputation"] = rep
-            if rep.get("verdict") == "malicious":
-                who = ", ".join(p.get("provider", "") for p in rep.get("providers", [])
-                                if p.get("verdict") == "malicious")
-                add(3, "url_blocklisted", f"{u['url'][:160]} — listed by {who}", 25)
-                u["verdict"] = "malicious"
-                u["risk"] = max(int(u.get("risk") or 0), 80)
-            elif rep.get("verdict") == "suspicious":
-                add(2, "url_blocklisted", f"{u['url'][:160]} — suspicious in a threat feed", 10)
-
+    # Reputation bị gỡ: đánh giá URL hoàn toàn bằng rule/fact local.
     for u in urls:
         if u["verdict"] == "clean": continue
         reasons = "; ".join(u["reasons"])

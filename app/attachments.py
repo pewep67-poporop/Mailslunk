@@ -152,15 +152,7 @@ def extract(name: str, raw: bytes, quarantine: bool = True, user: str = "") -> l
         gen = _iter_msg(raw)
     else: gen = _iter_eml(raw)
 
-    # --- M9 reputation (off by default; only the SHA-256 leaves the server) ---
-    reputation = None
-    try:
-        from . import reputation as _rep
-        reputation = _rep
-    except Exception:
-        reputation = None
-    rep_on = reputation is not None and reputation.enabled()
-
+    # Reputation bị gỡ: không gửi hash ra dịch vụ ngoài.
     out = []
     for i, (fn, decl, data) in enumerate(gen):
         if i >= MAX_ATT: break
@@ -196,19 +188,6 @@ def extract(name: str, raw: bytes, quarantine: bool = True, user: str = "") -> l
                 a["verdict"] = "suspicious"
             elif a["reasons"] and a.get("verdict") == "clean":
                 a["verdict"] = "suspicious" if a["sev"] >= 2 else "clean"
-        if rep_on:
-            try:
-                rep = reputation.check_hash(sha, user)
-            except Exception:
-                rep = {"verdict": "unknown", "providers": []}
-            a["reputation"] = rep
-            if rep.get("verdict") == "malicious":
-                who = ", ".join(p.get("provider", "") for p in rep.get("providers", [])
-                                if p.get("verdict") == "malicious")
-                a["verdict"] = "malicious"
-                a["reasons"] = list(a["reasons"]) + [f"listed by {who}"]
-                a["sev"] = 3
-                a["weight"] = max(int(a["weight"] or 0), 30)
         out.append(a)
         if quarantine and a.get("verdict") != "clean":
             _quarantine(sha, fn, data)

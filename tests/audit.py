@@ -53,11 +53,11 @@ for name in ("app.js", "index.html", "app.css"):
         ui += sum(1 for _ in fh)
 print(f"  app/*.py: {len(py)} module, {loc} dòng | public/*: {ui} dòng")
 ok("module lõi đủ", all(m in py for m in ("main.py", "parsers.py", "bodies.py", "attachments.py",
-   "authcheck.py", "headers.py", "routing.py", "urls.py", "ioc.py", "siem.py", "enrichment.py",
-   "dns_real.py", "db.py", "auth.py", "report.py", "mapgen.py", "graph.py", "urlintel.py", "threatscan.py")))
+   "authcheck.py", "headers.py", "routing.py", "urls.py", "ioc.py", "enrichment.py",
+   "dns_local.py", "db.py", "auth.py", "report.py", "mapgen.py", "graph.py", "urlintel.py", "threatscan.py")))
 req_txt = open(os.path.join(ROOT, "requirements.txt"), encoding="utf-8").read().lower()
 needed = ["fastapi", "uvicorn", "bcrypt", "dnspython", "pyspf", "dkimpy", "geoip2", "oletools",
-          "extract-msg", "python-multipart", "olefile", "requests"]
+          "extract-msg", "python-multipart", "olefile"]
 ok("requirements.txt có các gói cốt lõi", all(n in req_txt for n in needed),
    [n for n in needed if n not in req_txt])
 ok("không còn TODO/FIXME trong app/", not any(
@@ -140,9 +140,6 @@ s, h, b = call(f"/api/ioc/{cid}.csv")
 ok("IOC CSV 200", s == 200 and b"type" in b.lower())
 s, h, b = call(f"/api/ioc/{cid}?format=stix")
 ok("IOC STIX 200", s == 200 and b"stix" in b.lower() or s == 200)
-for fmt in ("cef", "syslog", "ecs", "elastic", "splunk"):
-    s, h, b = call(f"/api/export/{cid}?format={fmt}")
-    ok("export SIEM " + fmt, s == 200 and len(b) > 20, (s, len(b)))
 s, h, b = jcall("/api/cases?q=a.eml")
 ok("lịch sử có case", s == 200 and any(c["id"] == cid for c in b.get("cases", [])))
 

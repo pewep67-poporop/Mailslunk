@@ -7,23 +7,19 @@ MailSleuth Python là bản **FastAPI** để phân tích/pháp chứng email (s
 ## Tính năng chính
 
 - **Định dạng nhập**: `.eml`, `.emlx`, `.mht/.mhtml`, `.msg`, `.mbox/.mbx`, `.txt` và cây thư mục **Maildir** (phát hiện theo nội dung, kể cả file không phần mở rộng). `PST/OST` **không** được phân tích trực tiếp trên server: điều tra viên trích xuất ra EML/MBOX/Maildir bằng công cụ ngoài (readpst/Outlook) rồi nạp vào hệ thống.
-- **Phân tích pháp chứng**: header (H-*), xác thực SPF/DKIM/DMARC & alignment (A-*), tái dựng định tuyến Received/hop (R-*), URL/phishing (U-*), tệp đính kèm/nội dung độc hại & cách ly (A-*), IOC, điểm & verdict. Quét nội dung độc hại **offline/local** (mặc định): heuristic Python + rule YARA cục bộ (`rules/yara/*.yar`, `yara-python` nếu cài); tăng cường tùy chọn: YARA CLI, ClamAV/clamdscan, sandbox HTTP chỉ **localhost/private** (timeout/giới hạn, không gửi dữ liệu ra Internet).
 - **Streaming từng tệp** (`POST /api/analyze/stream`, NDJSON): tiến độ theo giai đoạn thực, hiển thị 3 dòng trạng thái + thanh biên độ + %, **Pause** (dừng sau tệp hiện tại), **Stop** (dừng lô nhưng giữ kết quả đã xong), **Cancel** (hủy và bỏ kết quả lô); lỗi dừng đúng tệp/vị trí và báo rõ.
 - **Nền tảng & client**: nhận diện/ghi nhận nền tảng Windows/Linux (chọn hoặc auto) và client/nguồn (Outlook, Exchange, Thunderbird, Apple Mail, Gmail, Maildir, mbox, RFC822/EML...).
 - **Báo cáo & toàn vẹn**: HTML/PDF/CSV/JSON theo ngôn ngữ `en/vi`; thống kê IP, DNS, SPF/DKIM/DMARC, routing, URL, IOC, đính kèm, đồ thị; **chữ ký SHA-256** trên dữ liệu vụ việc (fingerprint tái lập được) + **mộc số/con dấu** góc dưới bên phải; xác minh `GET /api/report/{id}/verify`. CSV trung hòa công thức (chống CSV injection).
 - **URL intel (offline/local)**: xuất URL theo target/nguồn; nhập CSV/JSON/XML/TXT để **tái phân tích một lần** bằng rule/mẫu local và gộp verdict/rủi ro/lý do vào vụ việc (`/api/urls/import`), sau đó tái ký.
 - **Đồ thị chứng cứ**: sơ đồ liên kết thực thể (message, tác nhân/địa chỉ, domain, IP, URL, tệp đính kèm/hash) dựng **chỉ từ chứng cứ** có trong kết quả, không suy diễn (`/api/case/{id}/graph`, `.svg`).
 - **Bản đồ nội bộ**: bản đồ lược đồ (schematic) vẽ cục bộ từ tọa độ GeoLite2 của IP/Received — **không tile/không dịch vụ bản đồ ngoài**.
-- **Local AI (tùy chọn)**: chỉ endpoint OpenAI-compatible trên localhost/private (`LLM_ALLOW_REMOTE=0` mặc định), endpoint cloud bị từ chối; LLM chỉ được **nâng** mức nghi ngờ, không hạ verdict rule; trích dẫn phải khớp nguyên văn.
 - **Tài khoản & phân quyền**: user (bcrypt, uid hex32 bất biến, SĐT, Key ID khôi phục một lần, đổi tên bằng token một lần do admin cấp); admin đăng nhập bằng mật khẩu, khóa/verifier tạo offline bằng `tools/admin_keygen.py` (PBKDF2-HMAC-SHA256 từ `password + SHA-256(username|CCCD)`, không lưu CCCD); tab Administration/Logs chỉ admin; chống leo thang ngang/dọc, CSRF cho thao tác ghi.
-- **Giao diện**: 9 tab (Analysis, Results, Guide, History, DNS, IP-Geo, Local AI, Administration, Logs), dark/night, cảnh báo viền phát sáng (đỏ/vàng/xanh), card nền tảng Windows/Linux, xem header/body từng thư, export/import có chọn vị trí.
 
 ## Sơ đồ kiến trúc
 
 ```mermaid
 flowchart TB
   subgraph Client["Trình duyệt (SPA - public/index.html, app.js, app.css)"]
-    Tabs[9 tab: Analysis/Results/Guide/History/DNS/IP-Geo/Local AI/Admin/Logs]
     Stream[Streaming NDJSON client\n3 dòng + biên độ + % | Pause/Stop/Cancel]
     View[Results: Overview/Messages/URLs/Graph\nHeader/Body | Report/Verify | Export/Import]
   end
@@ -32,17 +28,14 @@ flowchart TB
     Sec[Auth + session/CSRF + RBAC\nownership theo cases.uid]
     Analyze[/api/analyze/stream + /api/analyze/]
     Case[/api/cases, /api/case/*, /api/report/*, /api/urls/*, /api/map/]
-    Admin[/api/admin/*, /api/profile/*, /api/settings/llm/]
   end
 
   subgraph Core["Pipeline & mô-đun (app/)"]
     Parse[parsers/bodies: EML/MSG/MBOX/Maildir/TXT\nclient & platform]
     Forensic[headers, authcheck, routing, urls, attachments, ioc]
-    Enrich[enrichment, dns_real (tùy chọn)\nGeoLite2 local]
     Intel[urlintel: rule local, import/merge\nCSV formula-safe]
     Viz[graph: entity/edge từ chứng cứ\nmapgen: schematic nội bộ]
     Rep[report: HTML/PDF/CSV/JSON\ncase_signature SHA-256 + seal]
-    LLM[llm: endpoint local-only, redact\nchỉ nâng nghi ngờ]
   end
 
   subgraph Store["Lưu trữ (DATA_DIR)"]
@@ -55,7 +48,6 @@ flowchart TB
   Analyze --> Parse --> Forensic --> Enrich
   Forensic --> Intel --> Rep
   Enrich --> Viz --> Rep
-  LLM -. optional .-> Forensic
   API <--> Core
   Core <--> DB
   Core <--> FS
@@ -116,14 +108,9 @@ Xem đầy đủ trong `.env.example`.
 | `GEOIP_DIR` | ../mailsleuth/geoip | Thư mục GeoLite2 `.mmdb` |
 | `LIVE_DNS` | 0 | Tra DNS thật (SPF/DKIM/DMARC) — `0` = offline-safe |
 | `COOKIE_SECURE` | 0 | Đặt `1` khi chạy HTTPS |
-| `LLM_ENABLED` | 0 | Bật Local AI (per-user cấu hình trong UI/kv) |
-| `LLM_BASE_URL` | http://127.0.0.1:11434/v1 | Endpoint local OpenAI-compatible |
-| `LLM_ALLOW_REMOTE` | 0 | `0` chặn endpoint không phải localhost/private |
 | `THREATSCAN_ENABLED` | 1 | Bật quét nội dung độc hại offline (heuristic + engine local nếu có) |
 | `THREATSCAN_TIMEOUT` | 15 | Timeout (giây) cho engine/tool quét |
 | `THREATSCAN_MAX_BYTES` | 26214400 | Giới hạn byte quét mỗi tệp đính kèm |
-| `YARA_RULES_DIR` | ./rules/yara | Thư mục rule YARA cục bộ |
-| `YARA_CLI` / `CLAMSCAN_CLI` | (rỗng) | Đường dẫn tool ngoài tùy chọn (auto-detect nếu rỗng) |
 | `SANDBOX_URL` | (rỗng) | Adapter sandbox cục bộ (chỉ localhost/private) |
 | `BODY_MAX_BYTES` / `BODY_TOTAL_BYTES` | 512KB / 32MB | Giới hạn lưu body/thu và/vụ việc |
 
@@ -142,7 +129,6 @@ Xem đầy đủ trong `.env.example`.
 | GET | `/api/case/{id}/graph(.svg)` | Đồ thị thực thể từ chứng cứ |
 | GET | `/api/report/{id}` (+`.pdf`,`.csv`), `/verify` | Báo cáo & xác minh chữ ký SHA-256 |
 | POST | `/api/dns`, `/api/ip`, GET `/api/map` | Tra cứu/DNS/Geo (local) & bản đồ nội bộ |
-| GET/POST | `/api/settings/llm` | Cấu hình Local AI (per-user, che key) |
 | GET/POST | `/api/admin/*` | Quản trị (admin): users/stats/logs/sessions, cấp token đổi tên |
 
 ## Kiểm thử & kiểm tra nhanh
@@ -158,6 +144,11 @@ node --check public\app.js
 - Mặc định **offline-safe** (`LIVE_DNS=0`, không bản đồ/AI ngoài). Key/secret lưu per-user trong `kv`, không echo/log; CCCD **không** được lưu.
 - Báo cáo trả về kèm CSP chặt (`default-src 'none'`), `nosniff`, `no-referrer`, `no-store`. HTML body hiển thị qua sanitize + sandbox.
 - Chữ ký SHA-256 là **dấu vân tay toàn vẹn dữ liệu** (tái lập/kiểm chứng), không phải chữ ký số khóa bí mật.
-- Pipeline rule là nền tảng; ML/LLM (nếu bật) chỉ hỗ trợ/nâng cảnh báo theo ràng buộc, không tự ý suy diễn danh tính trong đồ thị.
 
 Xem hướng dẫn chi tiết: `HUONG_DAN_SETUP_PYTHON.md`. Kế hoạch & trạng thái: `KE_HOACH_NANG_CAP_DIEU_TRA.md`.
+
+## Chế độ forensic offline (bắt buộc)
+- Không gọi API/MxToolbox/VirusTotal/SIEM; không DNS live/PTR live; không AI cloud; không ML đổi verdict.
+- SPF/DKIM/DMARC và DNS lịch sử đọc từ `Authentication-Results` trong header, có thể tính lại bằng snapshot local (`pyspf`, `dkimpy`, `dnspython` chế độ `dns.zone`).
+- Mọi thay đổi chứng cứ đều re-sign SHA-256 theo phiên người dùng; export có `case_id + msg_index`.
+- Chi tiết tiêu chuẩn build/test: `TIEN_DO_BUILD.md`.

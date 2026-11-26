@@ -45,13 +45,12 @@ from starlette.requests import Request as StarletteRequest
 from . import auth as A
 from . import bodies
 from . import graph as entity_graph
-from . import siem
 from . import urlintel
 from .attachments import extract as extract_attachments, findings_for as attachment_findings
 from .authcheck import check_auth
 from .db import (connect, data_dir, init_db, kv_get, kv_set, log, setup_tmpdir,
                  tmp_dir)
-from .dns_real import lookup_auth, lookup_domain, normalize_domain, reverse_ptr as dns_reverse
+from .dns_local import lookup_auth, lookup_domain, normalize_domain, reverse_ptr as dns_reverse
 from .enrichment import classify_server, confidence, geo_lookup, score
 from .headers import analyze_headers
 from .ioc import extract as ioc_extract, to_csv as ioc_csv, to_stix as ioc_stix
@@ -69,8 +68,8 @@ APP_PUBLIC = PUBLIC
 
 MSG_FILE_MAX = int(os.getenv("MSG_FILE_MAX", str(80 * 1024 * 1024)))
 MAX_MESSAGES_PER_FILE = int(os.getenv("MAX_MESSAGES_PER_FILE", "2000"))
-LIVE_DNS = os.getenv("LIVE_DNS", "0") == "1"
-LLM_ALLOW_REMOTE = os.getenv("LLM_ALLOW_REMOTE", "0") == "1"
+LIVE_DNS = False  # forensic mode: no live DNS, snapshot only (P3)
+LLM_ALLOW_REMOTE = False
 
 
 @asynccontextmanager
@@ -287,25 +286,13 @@ def _health_deep() -> dict:
     except Exception as e:
         comp["geoip"] = f"error: {type(e).__name__}"
         degraded.append("geoip")
-    try:
-        import dns.resolver
-        dns.resolver.resolve("example.com", "A", lifetime=3)
-        comp["dns"] = "ok"
-    except Exception as e:
-        comp["dns"] = f"error: {type(e).__name__}"
-        degraded.append("dns")
+    comp["dns"] = "snapshot-only"
     try:
         from .breaker import snapshot
         comp["breakers"] = snapshot()
     except Exception:
         comp["breakers"] = {}
-    try:
-        from . import ml
-        comp["ml"] = ml.status()
-        if comp["ml"].get("state") == "error":
-            degraded.append("ml")
-    except Exception:
-        comp["ml"] = {"state": "absent"}
+    comp["ml"] = {"state": "removed"}
     return {"components": comp, "degraded": degraded}
 
 
@@ -314,7 +301,7 @@ def health(deep: int = 0):
     from .enrichment import _open
     _open()
     out = {"ok": True, "geo": {"city": True, "asn": True, "country": True},
-           "dnsResolvers": 1, "map": "local-schematic", "mxAuto": False,
+           "dnsResolvers": 0, "map": "local-schematic", "mxAuto": False,
            "offline": not LIVE_DNS}
     if deep:
         d = _health_deep()
@@ -646,12 +633,12 @@ def _enrich(msgs: list, ips: list) -> tuple:
     domains = [normalize_domain((m.get("from") or "")) for m in msgs]
     domains = list(dict.fromkeys([d for d in domains if d]))[:5]
     dns_map = {}
-    if LIVE_DNS:
-        for d in domains:
-            try:
-                dns_map[d] = lookup_auth(d)
-            except Exception:
-                dns_map[d] = {"auth": {}, "records": {}}
+    # DNS lịch sử: chỉ đọc snapshot do người dùng cung cấp (P3). Không query live.
+    for d in domains:
+        try:
+            dns_map[d] = lookup_auth(d)
+        except Exception:
+            dns_map[d] = {"auth": {}, "records": {}, "source": "unavailable"}
     ip_info = []
     for ip in ips[:20]:
         try:
@@ -713,9 +700,9 @@ def _analyze_one(fname: str, raw: bytes, user: str, src_path: str = None,
             for idx, item in enumerate(items):
                 mraw = item.get("_raw") or b""
                 chunks.append(_forensic_core(f"{fname}#{idx + 1}.eml", mraw,
-                                             do_auth=LIVE_DNS, user=user))
+                                             do_auth=False, user=user))
         else:
-            chunks = [_forensic_core(fname, raw, do_auth=LIVE_DNS, user=user)]
+            chunks = [_forensic_core(fname, raw, do_auth=False, user=user)]
     except ParseError as e:
         return None, {"file": fname, "error": e.code}
     except Exception:
@@ -782,39 +769,7 @@ def _analyze_one(fname: str, raw: bytes, user: str, src_path: str = None,
                     "totalDelayMs": worst["rt"]["totalDelayMs"]},
         "auth": worst["auth"], "urls": urls, "attachments": atts, "findings": findings,
     }
-    ml_out = {}
-    try:
-        from . import ml as _ml
-        ml_out = _ml.score_result(feature_src)
-    except Exception:
-        ml_out = {}
-    if ml_out:
-        top = ", ".join(t.get("feature", "") for t in (ml_out.get("topFactors") or [])[:3])
-        findings.append({"id": "ML-001", "sev": 2 if ml_out.get("mlVerdict") in ("suspicious", "phishing") else 0,
-                         "severity": "medium", "type": "ml_phishing",
-                         "evidence": f"ML {ml_out.get('mlScore')}% (model {ml_out.get('modelVersion')}) — top: {top}",
-                         "weight": 5 if ml_out.get("mlVerdict") in ("suspicious", "phishing") else 0})
-        if verdict == "clean" and ml_out.get("mlVerdict") in ("suspicious", "phishing"):
-            verdict = "suspicious"
-            sc = max(0, sc - 5)
-
-    llm_out = {}
-    try:
-        from . import llm as _llm
-        if _llm.enabled(user):
-            text = raw.decode("utf-8", "ignore")
-            llm_out = _llm.assess(feature_src, text, user)
-    except Exception:
-        llm_out = {}
-    if llm_out:
-        ev = "; ".join(str(e.get("quote") or "")[:80] for e in (llm_out.get("evidence") or [])[:2])
-        findings.append({"id": "LLM-001", "sev": 2, "severity": "medium", "type": "llm_suspicious",
-                         "evidence": f"Local AI: {llm_out.get('verdict')} ({int(float(llm_out.get('confidence') or 0) * 100)}%) — {llm_out.get('intent', '')[:120]} {ev}".strip(),
-                         "weight": 3})
-        if verdict == "clean" and llm_out.get("verdict") in ("suspicious", "phishing", "malware"):
-            verdict = "suspicious"
-            sc = max(0, sc - 3)
-
+    # ML/LLM bị gỡ: verdict chỉ từ evidence rule-based (xem TIEN_DO_BUILD.md).
     case_id = uuid.uuid4().hex[:12]
     ev_path = data_dir() / "evidence" / f"{case_id}.bin"
     if src_path and os.path.exists(src_path):
@@ -859,10 +814,6 @@ def _analyze_one(fname: str, raw: bytes, user: str, src_path: str = None,
                                                 "envAddr", "fromAddr", "replyTo", "headerFound",
                                                 "authservId", "raw", "upstream", "dkimSignatures")},
               "dns": dns_map, "ipInfo": ip_info, "offline": not LIVE_DNS}
-    if ml_out:
-        result["ml"] = ml_out
-    if llm_out:
-        result["llm"] = llm_out
     result["ioc"] = ioc_extract(result)
     try:
         result["graph"] = entity_graph.summary(result)
@@ -877,13 +828,7 @@ def _analyze_one(fname: str, raw: bytes, user: str, src_path: str = None,
     con.commit()
     con.close()
     log(user, "analyze", fname)
-    push = {"events": 0, "wazuh": 0, "splunk": 0, "elastic": 0, "errors": []}
-    try:
-        push = siem.emit_case(result, user)
-    except Exception as e:
-        push["errors"].append(type(e).__name__)
-    if push["events"]:
-        log(user, "siem_push", f"events={push['events']} wazuh={push['wazuh']} splunk={push['splunk']} elastic={push['elastic']} errors={len(push['errors'])}")
+    # SIEM bị gỡ hoàn toàn: không đẩy sự kiện ra ngoài.
     return result, None
 
 
@@ -1102,7 +1047,7 @@ async def case_urls_csv(case_id: str, request: Request, lang: str = "en"):
 
 
 # ---------------------------------------------------------------------------
-# IOC / SIEM exports
+# IOC exports (local only)
 # ---------------------------------------------------------------------------
 @app.get("/api/ioc/{case_id}.csv")
 async def ioc_csv_ep(case_id: str, request: Request, defang: str = "1"):
@@ -1123,32 +1068,6 @@ async def ioc_get(case_id: str, request: Request, format: str = ""):
         return Response(content=json.dumps(stix, indent=2), media_type="application/stix+json",
                         headers={"Content-Disposition": f'attachment; filename="{case_id}-stix.json"'})
     return {"caseId": case_id, **ioc}
-
-
-@app.get("/api/export/{case_id}")
-async def export_case(case_id: str, request: Request, format: str = "cef"):
-    s = require_auth(request)
-    row, result = _case_for(s, case_id)
-    events = siem.events_from_result(result, s["user"])
-    fm = (format or "cef").lower()
-    if fm == "cef":
-        body, mt, ext = siem.to_cef(events), "text/plain; charset=utf-8", "cef"
-    elif fm == "syslog":
-        body, mt, ext = siem.to_syslog(events), "text/plain; charset=utf-8", "syslog"
-    elif fm == "ecs":
-        body, mt, ext = siem.to_ecs(events, result, s["user"]), "application/x-ndjson", "ecs.ndjson"
-    elif fm == "elastic":
-        body, mt, ext = siem.to_bulk(events, result, s["user"]), "application/x-ndjson", "bulk.ndjson"
-    elif fm == "splunk":
-        body, mt, ext = siem.to_hec(events, result, s["user"]), "application/json", "hec.json"
-    elif fm == "stix":
-        stix = ioc_stix(result.get("ioc", {}).get("iocs", []), row)
-        return Response(content=json.dumps(stix, indent=2), media_type="application/stix+json",
-                        headers={"Content-Disposition": f'attachment; filename="{case_id}-stix.json"'})
-    else:
-        return JSONResponse({"error": "bad_format"}, status_code=400)
-    return Response(content=body, media_type=mt,
-                    headers={"Content-Disposition": f'attachment; filename="{case_id}-{ext}"'})
 
 
 # ---------------------------------------------------------------------------
@@ -1330,402 +1249,6 @@ async def map_post(request: Request):
     require_auth(request)
     return {"mode": "local", "hasKey": False, "source": "local",
             "error": None, "tileSource": "schematic", "offline": True}
-
-
-# ---------------------------------------------------------------------------
-# local AI endpoint settings (no cloud provider)
-# ---------------------------------------------------------------------------
-def _local_host(host: str) -> bool:
-    h = (host or "").strip().lower()
-    if h in ("localhost", "::1", "[::1]"):
-        return True
-    if h.endswith(".local"):
-        return True
-    try:
-        ip = ipaddress.ip_address(h)
-        return ip.is_loopback or ip.is_private or ip.is_link_local
-    except Exception:
-        return False
-
-
-def _llm_info(user: str) -> dict:
-    base = kv_get(f"llm.base:{user}") or os.getenv("LLM_BASE_URL", "http://127.0.0.1:11434/v1")
-    model = kv_get(f"llm.model:{user}") or os.getenv("LLM_MODEL", "qwen2.5:7b")
-    enabled = kv_get(f"llm.enabled:{user}")
-    if enabled == "":
-        enabled = os.getenv("LLM_ENABLED", "0")
-    return {"base": base, "model": model, "enabled": enabled in ("1", "true", "True"),
-            "hasKey": bool(kv_get(f"llm.key:{user}")), "local": _local_host(urlparse(base).hostname or ""),
-            "allowRemote": LLM_ALLOW_REMOTE}
-
-
-@app.get("/api/settings/llm")
-async def llm_get(request: Request):
-    s = require_auth(request)
-    return _llm_info(s["user"])
-
-
-@app.post("/api/settings/llm")
-async def llm_post(request: Request):
-    s = require_auth(request)
-    b = await request.json()
-    base = str(b.get("base") or "").strip().rstrip("/")[:300]
-    model = str(b.get("model") or "").strip()[:120]
-    if base:
-        u = urlparse(base)
-        if u.scheme not in ("http", "https") or not u.hostname:
-            return JSONResponse({"error": "bad_url"}, status_code=400)
-        if not LLM_ALLOW_REMOTE and not _local_host(u.hostname):
-            return JSONResponse({"error": "local_only"}, status_code=400)
-        kv_set(f"llm.base:{s['user']}", base)
-    if model:
-        kv_set(f"llm.model:{s['user']}", model)
-    if "enabled" in b:
-        kv_set(f"llm.enabled:{s['user']}", "1" if b.get("enabled") else "0")
-    if "key" in b:
-        kv_set(f"llm.key:{s['user']}", str(b.get("key") or "")[:300])
-    log(s["user"], "settings_llm", f"base={base or '-'} model={model or '-'}")
-    return _llm_info(s["user"])
-
-
-@app.post("/api/settings/llm/test")
-async def llm_test(request: Request):
-    s = require_auth(request)
-    from . import llm
-    if not llm.enabled(s["user"]):
-        return {"ok": False, "error": "disabled"}
-    try:
-        import requests
-        r = requests.get(llm.base_url(s["user"]).rstrip("/") + "/models", timeout=5)
-        return {"ok": r.status_code < 500, "status": r.status_code}
-    except Exception as e:
-        return {"ok": False, "error": type(e).__name__}
-
-
-# ---------------------------------------------------------------------------
-# reports: signed HTML / PDF / CSV (language-aware)
-# ---------------------------------------------------------------------------
-def _safe_name(v: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]", "_", v or "case")[:80]
-
-
-def _report_parts(row: dict, result: dict, lang: str):
-    vals = [x["ip"] for x in (result.get("ipInfo") or []) if x.get("ip")][:15]
-    geos = [geo_lookup(v) for v in vals] if vals else []
-    blob = build_map(vals, geos) if vals else b""
-    b64 = base64.b64encode(blob).decode() if blob else ""
-    return b64, blob, geos
-
-
-@app.get("/api/report/{case_id}/verify")
-async def report_verify(case_id: str, request: Request):
-    s = require_auth(request)
-    row, result = _case_for(s, case_id)
-    expected = row.get("sig") or case_signature(row, result)
-    actual = case_signature(row, result)
-    return {"caseId": case_id, "expected": expected, "actual": actual,
-            "match": secrets.compare_digest(str(expected), str(actual)),
-            "algorithm": "SHA-256"}
-
-
-@app.get("/api/report/{case_id}.csv")
-async def report_csv_short(case_id: str, request: Request, lang: str = "en", kind: str = "summary"):
-    s = require_auth(request)
-    row, result = _case_for(s, case_id)
-    data = render_csv(row, result, lang=lang, kind=kind)
-    return PlainTextResponse(data, media_type="text/csv; charset=utf-8",
-                             headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}-{_safe_name(kind)}.csv"'})
-
-
-@app.get("/api/report/{case_id}.pdf")
-async def report_pdf_short(case_id: str, request: Request, lang: str = "en"):
-    s = require_auth(request)
-    row, result = _case_for(s, case_id)
-    _, blob, _ = _report_parts(row, result, lang)
-    try:
-        pdf = render_pdf(row, result, lang=lang, sig=row.get("sig") or "", map_png=blob)
-    except Exception as e:
-        return JSONResponse({"error": "pdf_failed", "detail": type(e).__name__}, status_code=500)
-    return Response(content=pdf, media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}.pdf"'})
-
-
-@app.get("/api/report/{case_id}")
-async def report(case_id: str, request: Request, lang: str = "en", format: str = "",
-                 kind: str = "summary", download: int = 0):
-    s = require_auth(request)
-    row, result = _case_for(s, case_id)
-    fmt = (format or "").lower()
-    if fmt == "json":
-        result.setdefault("custody", {})
-        result["custody"].setdefault("caseId", row["id"])
-        result["caseMeta"] = {"id": row["id"], "ts": row["ts"], "user": row["user"],
-                              "file": row["file"], "sha256": row["sha256"],
-                              "signature": row.get("sig"), "platform": row.get("platform")}
-        return JSONResponse(result)
-    if fmt == "csv":
-        data = render_csv(row, result, lang=lang, kind=kind)
-        return PlainTextResponse(data, media_type="text/csv; charset=utf-8",
-                                 headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}-{_safe_name(kind)}.csv"'})
-    b64, blob, _ = _report_parts(row, result, lang)
-    if fmt == "pdf":
-        try:
-            pdf = render_pdf(row, result, lang=lang, sig=row.get("sig") or "", map_png=blob)
-        except Exception as e:
-            return JSONResponse({"error": "pdf_failed", "detail": type(e).__name__}, status_code=500)
-        return Response(content=pdf, media_type="application/pdf",
-                        headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}.pdf"'})
-    html = render_report(row, result, lang=lang, integrity=True, map_base64=b64,
-                         sig=row.get("sig") or "")
-    headers = {
-        "Content-Disposition": f'inline; filename="{_safe_name(case_id)}.html"',
-        # Defence in depth: report content is escaped, but email evidence is
-        # untrusted input. Never allow scripts, frames or remote fetches.
-        "Content-Security-Policy": ("default-src 'none'; img-src data:; "
-                                    "style-src 'unsafe-inline'; font-src data:; "
-                                    "base-uri 'none'; form-action 'none'; "
-                                    "frame-ancestors 'none'"),
-        "X-Content-Type-Options": "nosniff",
-        "Referrer-Policy": "no-referrer",
-        "Cache-Control": "no-store",
-    }
-    if download:
-        headers["Content-Disposition"] = f'attachment; filename="{_safe_name(case_id)}.html"'
-    return HTMLResponse(html, headers=headers)
-
-
-# ---------------------------------------------------------------------------
-# admin
-# ---------------------------------------------------------------------------
-def _public_user(r) -> dict:
-    return {"uid": r["uid"], "user": r["name"], "role": r["role"],
-            "phone": (r["phone"] or ""), "created": r["created"],
-            "lastLogin": r["last_login"], "disabled": bool(int(r["disabled"] or 0)),
-            "hasRecovery": bool(r["recovery"]), "adminEnrolled": bool(r["admin_kdf"])}
-
-
-@app.get("/api/admin/users")
-async def admin_users(request: Request):
-    require_admin(request)
-    con = connect()
-    rows = con.execute("SELECT * FROM users ORDER BY id").fetchall()
-    con.close()
-    return {"users": [_public_user(r) for r in rows]}
-
-
-@app.post("/api/admin/users")
-async def admin_create_user(request: Request):
-    admin = require_admin(request)
-    b = await request.json()
-    name = str(b.get("user") or "").strip()
-    pw = str(b.get("pass") or "")
-    role = str(b.get("role") or "analyst").lower()
-    phone = A.norm_phone(str(b.get("phone") or ""))
-    if not A.username_ok(name):
-        return JSONResponse({"error": "bad_user"}, status_code=400)
-    if not A.password_ok(pw):
-        return JSONResponse({"error": "weak"}, status_code=400)
-    if role not in ("analyst", "admin"):
-        return JSONResponse({"error": "bad_role"}, status_code=400)
-    if phone and not A.phone_ok(phone):
-        return JSONResponse({"error": "bad_phone"}, status_code=400)
-    if A.find_user_by_login(name):
-        return JSONResponse({"error": "exists"}, status_code=400)
-    uid = A.new_uid()
-    con = connect()
-    if role == "admin":
-        cccd = str(b.get("cccd") or "")
-        try:
-            blob, key = A.admin_blob(name, pw, cccd)
-        except ValueError as e:
-            con.close()
-            return JSONResponse({"error": "bad_cccd" if "CCCD" in str(e) else "weak"}, status_code=400)
-        h = bcrypt.hashpw(secrets.token_hex(32).encode(), bcrypt.gensalt(rounds=12)).decode()
-        con.execute("INSERT INTO users(name,hash,role,created,uid,phone,admin_kdf) VALUES(?,?,?,?,?,?,?)",
-                    (name, h, "admin", now_iso(), uid, phone or None, json.dumps(blob)))
-        out = {"user": name, "uid": uid, "role": "admin", "key": key,
-               "note": "Store this recovery key offline. Login uses the password."}
-    else:
-        h = bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode()
-        con.execute("INSERT INTO users(name,hash,role,created,uid,phone) VALUES(?,?,?,?,?,?)",
-                    (name, h, "analyst", now_iso(), uid, phone or None))
-        row = con.execute("SELECT id FROM users WHERE uid=?", (uid,)).fetchone()
-        con.commit()
-        con.close()
-        key = A.set_recovery(row["id"])
-        out = {"user": name, "uid": uid, "role": "analyst", "recovery": key}
-        log(admin["user"], "admin_create_user", f"{name} uid={uid} role=analyst")
-        return out
-    con.commit()
-    con.close()
-    log(admin["user"], "admin_create_user", f"{name} uid={uid} role=admin")
-    return out
-
-
-@app.post("/api/admin/users/{uid}/rename-token")
-async def admin_rename_token(uid: str, request: Request):
-    admin = require_admin(request)
-    target = _user_by_uid(uid)
-    if not target:
-        return JSONResponse({"error": "not_found"}, status_code=404)
-    token = secrets.token_hex(16)
-    exp = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
-    con = connect()
-    con.execute("UPDATE users SET rename_token=?, rename_exp=? WHERE id=?",
-                (hashlib.sha256(token.encode()).hexdigest(), exp, target["id"]))
-    con.commit()
-    con.close()
-    log(admin["user"], "admin_rename_token", f"uid={uid}")
-    return {"uid": uid, "token": token, "expires": exp}
-
-
-@app.post("/api/admin/users/{uid}/reset")
-async def admin_reset_user(uid: str, request: Request):
-    admin = require_admin(request)
-    target = _user_by_uid(uid)
-    if not target:
-        return JSONResponse({"error": "not_found"}, status_code=404)
-    b = await request.json()
-    newp = str(b.get("pass") or "")
-    if not A.password_ok(newp):
-        return JSONResponse({"error": "weak"}, status_code=400)
-    con = connect()
-    recovery = None
-    if (target["role"] or "") == "admin" and target["admin_kdf"]:
-        try:
-            blob = A.admin_rekey(json.loads(target["admin_kdf"]), newp)
-            con.execute("UPDATE users SET admin_kdf=? WHERE id=?", (json.dumps(blob), target["id"]))
-        except Exception:
-            con.close()
-            return JSONResponse({"error": "weak"}, status_code=400)
-    else:
-        h = bcrypt.hashpw(newp.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode()
-        con.execute("UPDATE users SET hash=? WHERE id=?", (h, target["id"]))
-        con.commit()
-        con.close()
-        recovery = A.set_recovery(target["id"])
-        con = None
-    if con is not None:
-        con.commit()
-        con.close()
-    A.drop_all_sessions(target["name"])
-    log(admin["user"], "admin_reset_user", f"uid={uid}")
-    return {"ok": True, "recovery": recovery}
-
-
-@app.post("/api/admin/users/{uid}/disable")
-async def admin_disable_user(uid: str, request: Request):
-    admin = require_admin(request)
-    if uid == admin.get("uid"):
-        return JSONResponse({"error": "self_forbidden"}, status_code=400)
-    target = _user_by_uid(uid)
-    if not target:
-        return JSONResponse({"error": "not_found"}, status_code=404)
-    b = await request.json()
-    disabled = 1 if b.get("disabled") else 0
-    if disabled and (target["role"] or "") == "admin":
-        con = connect()
-        n = con.execute("SELECT COUNT(*) AS n FROM users WHERE role='admin' AND COALESCE(disabled,0)=0 AND id<>?",
-                        (target["id"],)).fetchone()["n"]
-        con.close()
-        if n < 1:
-            return JSONResponse({"error": "last_admin"}, status_code=400)
-    con = connect()
-    con.execute("UPDATE users SET disabled=? WHERE id=?", (disabled, target["id"]))
-    con.commit()
-    con.close()
-    if disabled:
-        A.drop_all_sessions(target["name"])
-    log(admin["user"], "admin_disable_user", f"uid={uid} disabled={disabled}")
-    return {"ok": True, "disabled": bool(disabled)}
-
-
-@app.post("/api/admin/users/{uid}/role")
-async def admin_set_role(uid: str, request: Request):
-    admin = require_admin(request)
-    if uid == admin.get("uid"):
-        return JSONResponse({"error": "self_forbidden"}, status_code=400)
-    target = _user_by_uid(uid)
-    if not target:
-        return JSONResponse({"error": "not_found"}, status_code=404)
-    b = await request.json()
-    role = str(b.get("role") or "").lower()
-    if role not in ("analyst", "admin"):
-        return JSONResponse({"error": "bad_role"}, status_code=400)
-    if (target["role"] or "") == "admin" and role != "admin":
-        con = connect()
-        n = con.execute("SELECT COUNT(*) AS n FROM users WHERE role='admin' AND COALESCE(disabled,0)=0 AND id<>?",
-                        (target["id"],)).fetchone()["n"]
-        con.close()
-        if n < 1:
-            return JSONResponse({"error": "last_admin"}, status_code=400)
-    con = connect()
-    con.execute("UPDATE users SET role=? WHERE id=?", (role, target["id"]))
-    con.commit()
-    con.close()
-    A.drop_all_sessions(target["name"])
-    log(admin["user"], "admin_set_role", f"uid={uid} role={role}")
-    return {"ok": True, "role": role}
-
-
-@app.get("/api/admin/stats")
-async def admin_stats(request: Request):
-    require_admin(request)
-    con = connect()
-    users = con.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
-    admins = con.execute("SELECT COUNT(*) AS n FROM users WHERE role='admin'").fetchone()["n"]
-    cases_n = con.execute("SELECT COUNT(*) AS n FROM cases").fetchone()["n"]
-    imports = con.execute("SELECT COUNT(*) AS n FROM url_imports").fetchone()["n"]
-    con.close()
-    ev = data_dir() / "evidence"
-    try:
-        size = sum(p.stat().st_size for p in ev.glob("*") if p.is_file())
-    except Exception:
-        size = 0
-    return {"users": users, "admins": admins, "cases": cases_n,
-            "urlImports": imports, "evidenceBytes": size,
-            "offline": not LIVE_DNS, "map": "local-schematic"}
-
-
-@app.get("/api/admin/logs")
-async def admin_logs(request: Request):
-    require_admin(request)
-    con = connect()
-    rows = con.execute("SELECT * FROM audit ORDER BY id DESC LIMIT 300").fetchall()
-    con.close()
-    return [dict(r) for r in rows]
-
-
-@app.get("/api/admin/sessions")
-async def admin_sessions(request: Request):
-    require_admin(request)
-    con = connect()
-    rows = con.execute("SELECT * FROM session_signatures ORDER BY rowid DESC LIMIT 50").fetchall()
-    con.close()
-    return [dict(r) for r in rows]
-
-
-# legacy reputation settings: kept for API compatibility, off by default
-_REP_KEYS = ("abusech", "vt", "sb")
-
-
-@app.get("/api/settings/reputation")
-async def rep_get(request: Request):
-    s = require_auth(request)
-    from . import reputation
-    return {"enabled": reputation.enabled(),
-            "keys": {n: {"hasKey": bool(kv_get(f"reputation.{n}:{s['user']}"))} for n in _REP_KEYS}}
-
-
-@app.post("/api/settings/reputation")
-async def rep_post(request: Request):
-    s = require_auth(request)
-    b = await request.json()
-    for name in _REP_KEYS:
-        if name in b:
-            kv_set(f"reputation.{name}:{s['user']}", str(b.get(name) or "").strip()[:200])
-    log(s["user"], "settings_reputation", ",".join(n for n in _REP_KEYS if n in b))
-    return await rep_get(request)
 
 
 # ---------------------------------------------------------------------------

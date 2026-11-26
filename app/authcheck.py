@@ -158,7 +158,7 @@ def _txt_records(name: str) -> list:
         return hit
     recs = []
     try:
-        from .dns_real import _resolve
+        from .dns_local import _resolve
         recs, _err = _resolve(key, "TXT")
     except Exception:
         recs = []

@@ -65,7 +65,7 @@ def reverse_ptr(ip: str) -> dict:
     # the OS resolver has no timeout control and hangs for tens of seconds per IP
     # on VM/NAT networks (this froze big-dataset analysis).
     try:
-        from .dns_real import reverse_ptr as dns_ptr
+        from .dns_local import reverse_ptr as dns_ptr
         return dns_ptr(ip)
     except Exception:
         return {"names": [], "errors": []}

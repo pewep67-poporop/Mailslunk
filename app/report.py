@@ -102,7 +102,6 @@ _CATEGORIES = [
     ("url", ("U-", "url"), "URL", "URL"),
     ("attachment", ("T-", "attach", "file"), "Attachment", "Tệp đính kèm"),
     ("ml", ("ML-",), "ML classifier", "Bộ phân loại ML"),
-    ("llm", ("LLM-",), "Local AI", "AI nội bộ"),
 ]
 
 
@@ -224,7 +223,7 @@ _L = {
         "mx": "MX", "ns": "NS", "coords": "Coordinates", "country": "Country",
         "city": "City", "asn": "ASN / Org", "ptr": "PTR", "confidence": "Confidence",
         "no_map": "No coordinates available.", "limits": "Limits",
-        "limits_text": "Offline analysis only: no external map, no cloud AI, no reputation call. GeoLite2 location is approximate. Header/URL rules are deterministic heuristics, not a malware verdict.",
+        "limits_text": "Forensic offline: no external map, no cloud AI, no reputation/API call, no live DNS. GeoLite2 location is approximate. Header/URL rules are deterministic evidence-backed rules, not a malware verdict.",
     },
     "vi": {
         "title": "Báo cáo pháp chứng MailSleuth", "case": "Vụ việc", "analyst": "Chuyên viên",
@@ -246,7 +245,7 @@ _L = {
         "mx": "MX", "ns": "NS", "coords": "Tọa độ", "country": "Quốc gia",
         "city": "Thành phố", "asn": "ASN / Tổ chức", "ptr": "PTR", "confidence": "Độ tin cậy",
         "no_map": "Không có tọa độ.", "limits": "Giới hạn",
-        "limits_text": "Chỉ phân tích ngoại tuyến: không gọi map ngoài, không AI đám mây, không tra cứu reputation. Vị trí GeoLite2 là gần đúng. Quy tắc header/URL là heuristic xác định, không phải kết luận malware.",
+        "limits_text": "Pháp chứng offline: không map ngoài, không AI đám mây, không reputation/API, không DNS live. Vị trí GeoLite2 là gần đúng. Quy tắc header/URL là rule xác định dựa trên chứng cứ, không phải kết luận malware.",
     },
 }
 
@@ -434,7 +433,7 @@ def render_csv(row: dict, result: dict, lang: str = "en", kind: str = "summary")
         for d in _flatten_dns(result):
             w.writerow([_safe_csv(row.get("id"))] + [_safe_csv(d[k]) for k in ("domain", "spf", "dkim", "dmarc", "mx", "ns")])
     elif kind == "all":
-        # one row per finding plus the case header (useful for SIEM ingestion)
+        # one row per finding plus the case header
         w.writerow(["case_id", "file", "sha256", "score", "verdict", "category", "id", "type",
                     "severity", "evidence"] if en else
                    ["ma_vu", "tep", "sha256", "diem", "ket_luan", "nhom", "id", "loai", "muc_do", "chung_cu"])

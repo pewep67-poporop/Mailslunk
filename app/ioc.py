@@ -3,7 +3,7 @@
 Unifies indicators from every module of a stored case result:
   ip (origin + hops), domain (From/Reply-To/Return-Path/Message-ID + URL hosts),
   url, email (From/Reply-To addresses), file (attachment hashes + names).
-Pure offline; reputation enrichment plugs in later. Values can be defanged.
+Pure offline; no reputation enrichment. Values can be defanged.
 """
 import csv, io, uuid
 
