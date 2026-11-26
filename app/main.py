@@ -1313,8 +1313,11 @@ def _global_index():
     if _GLOBAL_CACHE["index"] is not None and _t.time() - _GLOBAL_CACHE["ts"] < 300:
         return _GLOBAL_CACHE["index"]
     from .global_graph import load_index
+    max_cases = int(os.getenv("GRAPH_MAX_CASES", "5000") or 5000)
     con = connect()
-    rows = con.execute("SELECT id, result FROM cases WHERE json_valid(result)").fetchall()
+    # Chỉ index N case gần nhất để giữ API nhanh; tăng GRAPH_MAX_CASES nếu cần.
+    rows = con.execute("SELECT id, result FROM cases WHERE json_valid(result) "
+                       "ORDER BY ts DESC LIMIT ?", (max_cases,)).fetchall()
     con.close()
     parsed = []
     for r in rows:
