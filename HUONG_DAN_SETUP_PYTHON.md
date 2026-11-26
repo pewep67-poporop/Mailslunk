@@ -47,6 +47,48 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 Mở `http://127.0.0.1:8000`. (Chạy song song bản Node ở cổng khác nếu cần; `DATA_DIR` phải tách biệt.)
 
+**Chạy trên Linux (khuyến nghị):**
+
+```bash
+cd /opt/mailsleuth_python
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# Sửa .env: DATA_DIR, GEOIP_DIR dùng đường dẫn tuyệt đối; DNS_SNAPSHOT nếu có snapshot
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Kiểm tra sau khi chạy: `curl http://127.0.0.1:8000/api/health` (phải trả `ok:true`, `dnsResolvers:0`, `map:"local-schematic"`).
+
+Chạy dưới systemd (tùy chọn, ví dụ `/etc/systemd/system/mailsleuth.service`):
+
+```ini
+[Unit]
+Description=MailSleuth Python forensic API
+After=network.target
+
+[Service]
+Type=simple
+User=mailsleuth
+WorkingDirectory=/opt/mailsleuth_python
+Environment=LANG=C.UTF-8
+Environment=LC_ALL=C.UTF-8
+ExecStart=/opt/mailsleuth_python/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now mailsleuth
+sudo journalctl -u mailsleuth -f
+```
+
+
 ### 1.5 Python 3.14 & ghi chú Linux
 
 **Python 3.14:** `requirements.txt` đã có nhánh `python_version >= "3.13"` (FastAPI ≥0.120 dùng `lifespan`, Pydantic ≥2.12, Pillow ≥11.3, bcrypt ≥5). Mã nguồn không dùng module bị loại bỏ ở 3.13/3.14 (`imghdr`, `cgi`, `distutils`, `telnetlib`, `on_event`). Tuy nhiên **chưa chạy smoke thực tế trên 3.14** — khuyến nghị tạo venv riêng và chạy lại 8 bộ test trước khi đưa vào production:
