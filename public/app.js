@@ -2525,10 +2525,23 @@ applyLang();
   } catch {}
 })();
 
-Object.assign(I18N.en, {  relH: 'Global evidence relations', relHint: 'All analysed emails. Every line comes from a field in the evidence (From, To, Received, URL, hash). Click a node or edge to inspect.', relSearchPh: 'actor / domain / IP / case id', relGo: 'Focus', relAll: 'Overview', relCsv: 'Export CSV', relActorsLabel: 'Actors', relMailList: 'Message index', relGraph: 'Relationship graph', relNoData: 'No relations yet.',
+Object.assign(I18N.en, {
+  relH: 'Global evidence relations',
+  relHint: 'All analysed emails. Every line comes from a field in the evidence (From, To, Received, URL, hash). Click a node or edge to inspect.',
+  relSearchPh: 'actor / domain / IP / case id',
+  relGo: 'Focus', relAll: 'Overview', relCsv: 'Export CSV',
+  relActorsLabel: 'Actors', relMailList: 'Message index',
+  relGraph: 'Relationship graph', relNoData: 'No relations yet.',
+  saved: 'Saved.',
 });
-Object.assign(I18N.vi, {  relH: 'Quan h? ch?ng c? toan h? th?ng', relHint: 'Tat ca email da phan tich. Moi duong lay tu field chung cu (From, To, Received, URL, hash). Nham vao node/canh de xem chung cu.', relSearchPh: 'actor / domain / IP / ma vu', relGo: 'Loc', relAll: 'Toan the', relCsv: 'Xuat CSV', relGraph: 'So do quan he', relNoData: 'Chua co quan he.', relActorsLabel: 'Đối tượng', relMailList: 'Danh sách thư',
-
+Object.assign(I18N.vi, {
+  relH: 'Quan hệ chứng cứ toàn hệ thống',
+  relHint: 'Tất cả email đã phân tích. Mỗi đường lấy từ field chứng cứ (From, To, Received, URL, hash). Nhấn vào node/cạnh để xem chứng cứ.',
+  relSearchPh: 'actor / domain / IP / mã vụ',
+  relGo: 'Lọc', relAll: 'Toàn thể', relCsv: 'Xuất CSV',
+  relActorsLabel: 'Đối tượng', relMailList: 'Danh sách thư',
+  relGraph: 'Sơ đồ quan hệ', relNoData: 'Chưa có quan hệ.',
+  saved: 'Đã lưu.',
 });
 
 $('relGo').onclick = () => { loadRelIndex(($('relQ')?.value||'').trim()); };
