@@ -1829,7 +1829,7 @@ async function loadHistory(force = false) {
   histLoading = true;
   $('histMsg').textContent = '';
   try {
-    const r = await api('/api/cases?limit=100&q=' + encodeURIComponent($('histQ').value.trim()));
+    const r = await api('/api/cases?limit=30000&q=' + encodeURIComponent($('histQ').value.trim()));
     const j = await r.json().catch(() => ({}));
     if (r.status === 401) { leaveApp(); $('err').textContent = t('e_auth'); return; }
     if (!r.ok) { $('histMsg').textContent = t('logsLoadFailed'); return; }
