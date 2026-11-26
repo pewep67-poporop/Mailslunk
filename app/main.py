@@ -1409,7 +1409,11 @@ async def report_verify(case_id: str, request: Request):
 async def report_csv_short(case_id: str, request: Request, lang: str = "en", kind: str = "summary"):
     s = require_auth(request)
     row, result = _case_for(s, case_id)
-    data = render_csv(row, result, lang=lang, kind=kind)
+    try:
+        data = render_csv(row, result, lang=lang, kind=kind)
+    except Exception as e:
+        return JSONResponse({"error": "report_failed", "where": "csv",
+                             "detail": f"{type(e).__name__}: {str(e)[:200]}"}, status_code=500)
     return PlainTextResponse(data, media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}-{_safe_name(kind)}.csv"'})
 
@@ -1418,11 +1422,12 @@ async def report_csv_short(case_id: str, request: Request, lang: str = "en", kin
 async def report_pdf_short(case_id: str, request: Request, lang: str = "en"):
     s = require_auth(request)
     row, result = _case_for(s, case_id)
-    _, blob, _ = _report_parts(row, result, lang)
     try:
+        _, blob, _ = _report_parts(row, result, lang)
         pdf = render_pdf(row, result, lang=lang, sig=row.get("sig") or "", map_png=blob)
     except Exception as e:
-        return JSONResponse({"error": "pdf_failed", "detail": type(e).__name__}, status_code=500)
+        return JSONResponse({"error": "report_failed", "where": "pdf",
+                             "detail": f"{type(e).__name__}: {str(e)[:200]}"}, status_code=500)
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}.pdf"'})
 
@@ -1441,19 +1446,32 @@ async def report(case_id: str, request: Request, lang: str = "en", format: str =
                               "signature": row.get("sig"), "platform": row.get("platform")}
         return JSONResponse(result)
     if fmt == "csv":
-        data = render_csv(row, result, lang=lang, kind=kind)
+        try:
+            data = render_csv(row, result, lang=lang, kind=kind)
+        except Exception as e:
+            return JSONResponse({"error": "report_failed", "where": "csv",
+                                 "detail": f"{type(e).__name__}: {str(e)[:200]}"}, status_code=500)
         return PlainTextResponse(data, media_type="text/csv; charset=utf-8",
                                  headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}-{_safe_name(kind)}.csv"'})
-    b64, blob, _ = _report_parts(row, result, lang)
+    try:
+        b64, blob, _ = _report_parts(row, result, lang)
+    except Exception as e:
+        return JSONResponse({"error": "report_failed", "where": "parts",
+                             "detail": f"{type(e).__name__}: {str(e)[:200]}"}, status_code=500)
     if fmt == "pdf":
         try:
             pdf = render_pdf(row, result, lang=lang, sig=row.get("sig") or "", map_png=blob)
         except Exception as e:
-            return JSONResponse({"error": "pdf_failed", "detail": type(e).__name__}, status_code=500)
+            return JSONResponse({"error": "report_failed", "where": "pdf",
+                                 "detail": f"{type(e).__name__}: {str(e)[:200]}"}, status_code=500)
         return Response(content=pdf, media_type="application/pdf",
                         headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}.pdf"'})
-    html = render_report(row, result, lang=lang, integrity=True, map_base64=b64,
-                         sig=row.get("sig") or "")
+    try:
+        html = render_report(row, result, lang=lang, integrity=True, map_base64=b64,
+                             sig=row.get("sig") or "")
+    except Exception as e:
+        return JSONResponse({"error": "report_failed", "where": "html",
+                             "detail": f"{type(e).__name__}: {str(e)[:200]}"}, status_code=500)
     headers = {
         "Content-Disposition": f'inline; filename="{_safe_name(case_id)}.html"',
         # Defence in depth: report content is escaped, but email evidence is
