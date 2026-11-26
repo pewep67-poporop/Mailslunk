@@ -93,7 +93,7 @@ en: {
   dateLabel: 'Date', messageIdLabel: 'Message-ID', authLabel: 'Authentication',
   reportFailed: 'Report failed: ', graphFailed: 'Graph failed: ', fileLevel: 'File level', importedTarget: 'Imported',
   historyH: 'Investigation history', historySearchPh: 'file, analyst or case ID', historySearch: 'Search', refresh: 'Refresh',
-  historyHint: 'Latest 100 cases. Open a case to restore its result.', historyEmpty: 'No cases yet.', historyOpen: 'Open',
+  historyHint: 'All analysed cases (up to 30000). Open a case to restore its result.', historyEmpty: 'No cases yet.', historyOpen: 'Open',
   historyWhen: 'Date', historyFile: 'File', historyAnalyst: 'Analyst', historyMessages: 'Messages', historyVerdict: 'Verdict', historyScore: 'Score',
   guideH: 'Guide — how to use MailSleuth',
   guide1: 'Choose Windows or Linux in the dashboard to set the platform for the next run; Auto-detect keeps the value found in the file.',

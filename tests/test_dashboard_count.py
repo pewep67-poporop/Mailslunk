@@ -28,6 +28,13 @@ M.require_auth = lambda request: {"role": "admin", "user": "u", "uid": "0" * 32}
 
 
 class CountTest(unittest.TestCase):
+    def test_cases_limit_30000(self):
+        scope = {"type": "http", "method": "GET", "path": "/api/cases",
+                 "headers": [], "query_string": b"limit=30000"}
+        req = M.Request(scope)
+        out = asyncio.run(M.cases(req, q="", limit=30000))
+        self.assertEqual(len(out["cases"]), 600)
+
     def test_count_endpoint(self):
         scope = {"type": "http", "method": "GET", "path": "/api/cases/count",
                  "headers": [], "query_string": b""}

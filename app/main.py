@@ -996,7 +996,9 @@ async def cases_count(request: Request):
 @app.get("/api/cases")
 async def cases(request: Request, q: str = "", limit: int = 100):
     s = require_auth(request)
-    limit = max(1, min(int(limit or 100), 500))
+    # Giới hạn cũ 500 làm History/Dashboard chỉ thấy 500 case dù DB có 30k.
+    # Mở lên 30000 để lấy toàn bộ lô đã phân tích.
+    limit = max(1, min(int(limit or 100), 30000))
     con = connect()
     fields = """id, ts, user, file, sha256, sig, platform, lang,
         CASE WHEN json_valid(result) THEN json_extract(result,'$.format') END AS format,
