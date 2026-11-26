@@ -1586,9 +1586,14 @@ async function loadRelIndex(q = '', kind = '', offset = 0) {
 }
 
 // Gắn sớm để không bị chặn bởi binding khác
-elGo?.addEventListener('click', () => loadRelIndex((elQ?.value||'').trim()));
-elAll?.addEventListener('click', () => { elQ.value = ''; loadRelations(); loadRelIndex(); });
-elCsv?.addEventListener('click', () => { window.location.href = '/api/graph/global?csv_out=1'; });
+
+$('relGo')?.addEventListener('click', () => loadRelIndex((
+$('relQ')?.value||'').trim()));
+
+$('relAll')?.addEventListener('click', () => { 
+$('relQ').value = ''; loadRelations(); loadRelIndex(); });
+
+$('relCsv')?.addEventListener('click', () => { window.location.href = '/api/graph/global?csv_out=1'; });
 
 async function loadRelations(focus = '') {
   const out = $('relGraph'); if (!out) return;
