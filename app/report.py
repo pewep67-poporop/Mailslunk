@@ -201,6 +201,57 @@ def _flatten_dns(result: dict):
     return rows
 
 
+
+def _forensic_blocks(result: dict, lang: str, L: dict) -> dict:
+    """Các mục bổ sung cho báo cáo forensic (không suy đoán khi thiếu dữ liệu)."""
+    rt = result.get("routing") or {}
+    timeline = []
+    for h in (rt.get("hops") or [])[:40]:
+        if h.get("ts"):
+            timeline.append([h["ts"], f"Received hop #{h.get('idx')}",
+                             f"{h.get('from') or '-'} by {h.get('by') or '-'}",
+                             f"{h.get('delayMs')} ms" if h.get("delayMs") is not None else "-",
+                             L["observed"]])
+    if not timeline:
+        timeline = [["-", "-", "No timestamp in Received headers", "-", L["unverified"]]]
+
+    findings = result.get("findings") or []
+    rels = (result.get("relations") or {}).get("relations") or []
+    auth = result.get("auth") or {}
+    not_run = [k.upper() for k in ("spf", "dkim", "dmarc")
+               if str((auth.get(k) or {}).get("result") or "").lower() in ("not_run", "none", "")]
+    assessments = [
+        [L["observed"], f"{len(findings)} finding(s) trích trực tiếp từ header/body/file",
+         "; ".join(f.get("id", "") for f in findings[:8]) or "-"],
+        [L["inference"], f"{len([r for r in rels if r.get('confidence') == 'inference'])} quan hệ suy luận theo thời gian",
+         "; ".join(f"#{r.get('src_msg', 0)+1}->#{r.get('dst_msg', 0)+1}" for r in rels if r.get("confidence") == "inference")[:180] or "-"],
+        [L["unverified"], "Xác thực/kết quả thiếu dữ liệu: " + (", ".join(not_run) or "không"),
+         "Authentication-Results / snapshot DNS"],
+    ]
+    for a in (result.get("assessments") or [])[:50]:
+        assessments.append([a.get("kind") or "-", a.get("claim") or "-",
+                            (a.get("evidence_refs") or a.get("limitation") or "-")])
+
+    responses = [[x[0], x[1]] for x in [
+        ("Isolate email", "Cách ly email và đánh dấu tương tự"),
+        ("Check similar", "Kiểm tra email tương tự trong hệ thống"),
+        ("Independent verify", "Xác minh yêu cầu thanh toán qua kênh độc lập"),
+        ("Strengthen auth", "Tăng cường SPF/DKIM/DMARC và alignment"),
+        ("Keep logs", "Lưu log/phục vụ điều tra tiếp"),
+        ("User guidance", "Hướng dẫn người dùng nhận diện giả mạo"),
+    ]]
+    for a in (result.get("responses") or [])[:30]:
+        responses.append([a.get("action") or "-", a.get("rationale") or "-"])
+
+    exports = (result.get("exports") or [])
+    if not exports:
+        exports = ["report.pdf", "report.html", "ioc.csv", "relations.csv",
+                   "auth_summary.csv", "dns_snapshot.json", "timeline.csv",
+                   "manifest.sha256"]
+    annex = [[name, "-", "-"] for name in exports]
+    return {"timeline": timeline, "assessments": assessments,
+            "responses": responses, "annex": annex}
+
 # ---------------------------------------------------------------------------
 # HTML
 # ---------------------------------------------------------------------------
@@ -225,6 +276,10 @@ _L = {
         "mx": "MX", "ns": "NS", "coords": "Coordinates", "country": "Country",
         "city": "City", "asn": "ASN / Org", "ptr": "PTR", "confidence": "Confidence",
         "no_map": "No coordinates available.", "limits": "Limits",
+        "toc": "Contents", "method": "Method", "timeline": "Event timeline",
+        "classification": "Assessment classification", "response": "Response & prevention",
+        "annex": "Annex - exported evidence files", "observed": "Observed",
+        "inference": "Inference", "unverified": "Unverified", "session_hash": "Session hash",
         "limits_text": "Forensic offline: no external map, no cloud AI, no reputation/API call, no live DNS. GeoLite2 location is approximate. Header/URL rules are deterministic evidence-backed rules, not a malware verdict.",
     },
     "vi": {
@@ -247,6 +302,10 @@ _L = {
         "mx": "MX", "ns": "NS", "coords": "Tọa độ", "country": "Quốc gia",
         "city": "Thành phố", "asn": "ASN / Tổ chức", "ptr": "PTR", "confidence": "Độ tin cậy",
         "no_map": "Không có tọa độ.", "limits": "Giới hạn",
+        "toc": "Mục lục", "method": "Phương pháp", "timeline": "Timeline sự kiện",
+        "classification": "Phân loại nhận định", "response": "Ứng phó & phòng ngừa",
+        "annex": "Phụ lục - file chứng cứ xuất khẩu", "observed": "Quan sát",
+        "inference": "Suy luận", "unverified": "Chưa đủ cơ sở", "session_hash": "Hash phiên",
         "limits_text": "Pháp chứng offline: không map ngoài, không AI đám mây, không reputation/API, không DNS live. Vị trí GeoLite2 là gần đúng. Quy tắc header/URL là rule xác định dựa trên chứng cứ, không phải kết luận malware.",
     },
 }
@@ -337,6 +396,18 @@ def render_report(row: dict, result: dict, lang: str = "en", integrity: bool = T
         graph_svg = _graph.to_svg(_graph.build(result), lang)
     except Exception:
         graph_svg = ""
+    fb = _forensic_blocks(result, lang, L)
+    timeline_html = _table(["Timestamp", "Source", "Event", "Delay", "Confidence"], fb["timeline"])
+    class_html = _table([L["classification"], "Detail", "Evidence"], fb["assessments"])
+    resp_html = _table(["Action", "Rationale"], fb["responses"])
+    annex_html = _table(["File", "SHA-256", "Size"], fb["annex"])
+    toc_html = ("<h2>0. " + esc(L["toc"]) + "</h2><ol><li>" +
+                "</li><li>".join(esc(x) for x in [
+                    L["custody"], L["summary"], L["auth"], L["header"], L["routing"],
+                    L["findings"], L["ips"], L["map"], L["urls"], L["attachments"],
+                    "DNS", L["ioc"], L["graph"], L["method"], L["timeline"],
+                    L["classification"], L["response"], L["annex"], L["signature"], L["limits"],
+                ]) + "</li></ol>")
     map_html = (f'<img class="map" src="data:image/png;base64,{map_base64}" alt="{esc(L["map"])}">'
                 if map_base64 else f'<p class="muted">{esc(L["no_map"])}</p>')
     meta = [
@@ -352,6 +423,8 @@ def render_report(row: dict, result: dict, lang: str = "en", integrity: bool = T
         [L["score"], f"{result.get('score')}/100"],
         [L["verdict"], result.get("verdict")],
         [L["count"], result.get("count")],
+        [L["session_hash"], result.get("session_fingerprint") or "-"],
+        ["signed_at", result.get("signed_at") or "-"],
     ]
     meta_html = _table(["Field", "Value"], meta, "meta")
     seal = seal_svg(sig, when, lang)
@@ -372,6 +445,7 @@ th{{background:#e9eef2;text-align:left}}tr:nth-child(even) td{{background:#fbfcf
 </style></head><body><div class="page">
 <h1>{esc(L['title'])}</h1>
 <p class="muted">MailSleuth · {esc(L['generated'])}: {esc(when)} · {esc(L['case'])} {esc(row.get('id'))}</p>
+{toc_html}
 <h2>1. {esc(L['custody'])}</h2>{meta_html}
 <h2>2. {esc(L['summary'])}</h2>{stat_html}
 <h2>3. {esc(L['auth'])}</h2>{auth_html}
@@ -385,9 +459,14 @@ th{{background:#e9eef2;text-align:left}}tr:nth-child(even) td{{background:#fbfcf
 <h2>11. DNS</h2>{dns_html}
 <h2>12. {esc(L['ioc'])}</h2>{ioc_html}
 <h2>13. {esc(L['graph'])}</h2>{graph_svg or '<p class="muted">-</p>'}
-<h2>14. {esc(L['signature'])}</h2>
+<h2>14. {esc(L['method'])}</h2><p class="note">{esc(L['limits_text'])}</p>
+<h2>15. {esc(L['timeline'])}</h2>{timeline_html}
+<h2>16. {esc(L['classification'])}</h2>{class_html}
+<h2>17. {esc(L['response'])}</h2>{resp_html}
+<h2>18. {esc(L['annex'])}</h2>{annex_html}
+<h2>19. {esc(L['signature'])}</h2>
 <p><code>{esc(sig)}</code></p><p class="note">{esc(L['sig_note'])}</p>
-<h2>15. {esc(L['limits'])}</h2><p class="note">{esc(L['limits_text'])}</p>
+<h2>20. {esc(L['limits'])}</h2><p class="note">{esc(L['limits_text'])}</p>
 </div><div class="seal">{seal}</div></body></html>"""
 
 
@@ -665,13 +744,24 @@ def render_pdf(row: dict, result: dict, lang: str = "en", sig: str = "", map_png
               [[a.get("name"), f"{a.get('size')} B", a.get("sha256"),
                 (a.get("verdict") or "") + ((" [" + ", ".join(a.get("scanEngines") or []) + "]") if a.get("scanEngines") else "")]
                for a in (result.get("attachments") or [])[:100]], [50, 18, 86, 28])
-    pdf.section("10. " + L["signature"])
+    fb = _forensic_blocks(result, lang, L)
+    pdf.section("10. " + L["timeline"])
+    pdf.table(["Timestamp", "Source", "Event", "Delay"],
+              [[r[0], r[1], r[2], r[3]] for r in fb["timeline"][:40]], [35, 35, 90, 22])
+    pdf.section("11. " + L["classification"])
+    pdf.table(["Kind", "Detail", "Evidence"],
+              [[r[0], r[1], r[2]] for r in fb["assessments"][:60]], [28, 90, 64])
+    pdf.section("12. " + L["response"])
+    pdf.table(["Action", "Rationale"], fb["responses"][:30], [60, 122])
+    pdf.section("13. " + L["annex"])
+    pdf.table(["File", "SHA-256", "Size"], fb["annex"][:40], [60, 100, 22])
+    pdf.section("14. " + L["signature"])
     pdf.set_font(pdf._family, "", 7)
     pdf.multi_cell(0, 4, sig, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(1)
     pdf.set_font(pdf._family, "", 7)
     pdf.multi_cell(0, 4, pdf._t(L["sig_note"]), new_x="LMARGIN", new_y="NEXT")
-    pdf.section("11. " + L["limits"])
+    pdf.section("15. " + L["limits"])
     pdf.set_font(pdf._family, "", 7)
     pdf.multi_cell(0, 4, pdf._t(L["limits_text"]), new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output())

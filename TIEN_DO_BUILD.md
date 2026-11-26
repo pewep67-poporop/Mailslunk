@@ -30,7 +30,7 @@ L1 điểm theo quy trình/bằng chứng · L2 giải thích · L3 thiếu thì
 - [x] **P4** — `tools/verify_dataset.py` (CSV/JSON manifest, exit 0/1, CSV+JSON report); `tests/test_verify_dataset.py` 2/2 OK.
 - [x] **P5** — `relations.py` (thread/shared-IP/sender/hash/URL + TIME_NEAR inference), `graph.py` hop/GeoIP/relation + `to_png`, UI Graph filter/list; `/api/case/{id}/relations(.csv)`; `tests/test_relations.py` 5/5 OK.
 - [ ] **P6** — schema/API mới: `case_meta, evidence_inventory, custody_events, timeline_events, assessments, responses, screenshots, team_assignment, relations`; uid ownership; re-sign.
-- [ ] **P7** — `report.py` mở rộng chuẩn forensic: TOC, phương pháp, xyác thực, timeline, 3 nhóm kết luận, kiến nghị, phụ lục export, seal+hash phiên.
+- [x] **P7** — report HTML/PDF mở rộng: TOC, phương pháp, timeline, 3 nhóm phân loại, ứng phó, phụ lục export, `session_fingerprint/signed_at` trong `case_signature`; `tests/test_report_forensic.py` 3/3 OK.
 - [ ] **P8** — `tools/autopsy_handoff.py` cho PST/OST/OLE/carving.
 - [ ] **P9** — gói ZIP nộp bài: PDF/HTML/CSV/STIX + inventory + custody + timeline + slide + ảnh chú thích + `manifest.sha256`.
 - [ ] **P10** — docs, tests, no-network audit, smoke API mở rộng; commit/push; viết `BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md`.
@@ -56,6 +56,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 ## 6. Nhật ký tiến độ
 - 2026-11-26: phê duyệt kế hoạch; tạo file bàn giao; GATE 0 xong (`1480e2e` đã push).
 - 2026-11-26: GATE 0.5 xong — xóa 6 module runtime + 8 tool/test ML/SIEM; `app/dns_local.py` stub offline; compile/import OK.
-- 2026-11-26: P1 (10/10), P2 (2/2), P3 (5/5), P4 (2/2), P5 (5/5) xong; compile/JS OK.
+- 2026-11-26: P1(10/10), P2(2/2), P3(5/5), P4(2/2), P5(5/5), P6(2/2), P7(3/3) xong.
 
-**Next action:** P6 — schema/API pháp chứng: case_meta, evidence_inventory, custody_events, timeline_events, assessments, responses, screenshots, team_assignment; uid ownership + re-sign; test.
+**Next action:** P8 — `tools/autopsy_handoff.py`; P9 — `tools/build_submission.py` gói ZIP; P10 — docs, full test, `BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md`, commit/push.
