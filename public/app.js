@@ -77,7 +77,7 @@ en: {
   verifyBad: 'SIGNATURE MISMATCH — the case data changed after signing.', signatureLabel: 'SHA-256 signature',
   clientLabel: 'Detected platform', formatLabel: 'Format', shaLabel: 'SHA-256', custodyLabel: 'Chain of custody',
   receivedCount: 'Received hops', totalTransit: 'Total transit', hopFrom: 'From', gatewayLabel: 'Gateway',
-  hopDelay: 'Delay', hopTime: 'Time', authEnvelope: 'Envelope', headerChecks: 'Header checks', forensics: 'Authentication & routing',
+  hopDelay: 'Delay', hopTime: 'Time', authEnvelope: 'Envelope', headerChecks: 'Header checks', forensics: 'Authentication & routing', authInsufficient: 'Insufficient basis (offline / no snapshot)',
   threats: 'URLs and attachments', iocCount: 'IOC', senderDns: 'Sender domain DNS', dnsExplain: 'SPF, DMARC and MX of the sender domain.',
   ipIntelligence: 'Origin IP intelligence', ipExplain: 'Local GeoLite2 and PTR; the map is an internal schematic.',
   mapTitle: 'Server locations found in the mail', locatedSummary: 'Located', coordinatesLabel: 'Coordinates',
@@ -217,7 +217,7 @@ vi: {
   verifyBad: 'CHỮ KÝ KHÔNG KHỚP — dữ liệu đã thay đổi sau khi ký.', signatureLabel: 'Chữ ký SHA-256',
   clientLabel: 'Nền tảng phát hiện', formatLabel: 'Định dạng', shaLabel: 'SHA-256', custodyLabel: 'Chuỗi bảo quản',
   receivedCount: 'Số chặng Received', totalTransit: 'Tổng thời gian truyền', hopFrom: 'Từ', gatewayLabel: 'Gateway',
-  hopDelay: 'Độ trễ', hopTime: 'Thời gian', authEnvelope: 'Envelope', headerChecks: 'Kiểm tra header', forensics: 'Xác thực & đường truyền',
+  hopDelay: 'Độ trễ', hopTime: 'Thời gian', authEnvelope: 'Envelope', headerChecks: 'Kiểm tra header', forensics: 'Xác thực & đường truyền', authInsufficient: 'Không đủ cơ sở (offline / thiếu snapshot)',
   threats: 'URL và tệp đính kèm', iocCount: 'IOC', senderDns: 'DNS miền người gửi', dnsExplain: 'SPF, DMARC và MX của miền người gửi.',
   ipIntelligence: 'Thông tin IP nguồn', ipExplain: 'GeoLite2 nội bộ và PTR; bản đồ là lược đồ nội bộ.',
   mapTitle: 'Vị trí máy chủ phát hiện trong thư', locatedSummary: 'Định vị được', coordinatesLabel: 'Tọa độ',
@@ -1226,6 +1226,10 @@ const authLine = auth => {
     const r = auth?.[k]?.result;
     wrap.append(badge(`${k.toUpperCase()} ${r || 'none'}`, authKind(r)));
   }
+  if (['spf', 'dkim', 'dmarc'].some(k =>
+      ['not_run', 'none', ''].includes(String(auth?.[k]?.result || '').toLowerCase()))) {
+    wrap.append(el('span', 'hint', t('authInsufficient')));
+  }
   return wrap;
 };
 
@@ -1725,13 +1729,8 @@ async function loadDashboard() {
     if ($('dashBad')) $('dashBad').textContent = String(j.bad || 0);
     if ($('dashWarn')) $('dashWarn').textContent = String(j.warn || 0);
     if ($('dashOk')) $('dashOk').textContent = String(j.ok || 0);
-    let findings = 0, relations = 0;
-    for (const r of lastResults || []) {
-      findings += (r.findings || []).length;
-      relations += ((r.relations || {}).count || 0);
-    }
-    if ($('dashFindings')) $('dashFindings').textContent = String(findings);
-    if ($('dashRelations')) $('dashRelations').textContent = String(relations);
+    if ($('dashFindings')) $('dashFindings').textContent = String(j.findings || 0);
+    if ($('dashRelations')) $('dashRelations').textContent = String(j.relations || 0);
   } catch {}
 }
 
@@ -1791,6 +1790,7 @@ async function openHistoryCase(id) {
     resTab = 'overview';
     last = j;
     renderCurrentResult();
+    loadDashboard();  // cập nhật card Findings/Relations theo case vừa mở
     switchTab('tabResults');
   } catch (e) {
     $('histMsg').textContent = t('reportFailed') + e.message;

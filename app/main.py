@@ -982,11 +982,14 @@ async def cases_count(request: Request):
         f"COALESCE(SUM(CAST(json_extract(result,'$.count') AS INTEGER)),0) AS messages, "
         f"SUM(CASE WHEN json_extract(result,'$.verdict')='malicious_or_phishing' THEN 1 ELSE 0 END) AS bad, "
         f"SUM(CASE WHEN json_extract(result,'$.verdict')='suspicious' THEN 1 ELSE 0 END) AS warn, "
-        f"SUM(CASE WHEN json_extract(result,'$.verdict')='clean' THEN 1 ELSE 0 END) AS ok "
+        f"SUM(CASE WHEN json_extract(result,'$.verdict')='clean' THEN 1 ELSE 0 END) AS ok, "
+        f"COALESCE(SUM(json_array_length(json_extract(result,'$.findings'))),0) AS findings, "
+        f"COALESCE(SUM(CAST(json_extract(result,'$.relations.count') AS INTEGER)),0) AS relations "
         f"FROM cases {where}", args).fetchone()
     con.close()
     return {"cases": row["cases"], "messages": row["messages"],
-            "bad": row["bad"] or 0, "warn": row["warn"] or 0, "ok": row["ok"] or 0}
+            "bad": row["bad"] or 0, "warn": row["warn"] or 0, "ok": row["ok"] or 0,
+            "findings": row["findings"] or 0, "relations": row["relations"] or 0}
 
 
 @app.get("/api/cases")

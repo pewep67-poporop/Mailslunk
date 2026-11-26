@@ -66,4 +66,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 - 2026-11-26: thêm `app/timeline.py` — tự ghi mốc quá khứ từ `Date` + `Received` vào `result.timeline_events`; API forensic/timeline fallback; sub-tab Results/Timeline; báo cáo dùng event tự sinh. `tests/test_timeline.py` 2/2 OK.
 - 2026-11-26: test server sau lô 15029 file — phát hiện `/api/cases` ép `limit<=500` nên dashboard/lập luận trước đó đọc nhầm thành 500 case. Thêm `/api/cases/count` đếm thật từ DB + dashboard dùng endpoint này; `tests/test_dashboard_count.py` 1/1 OK.
 
+- 2026-11-26: test lô 15029 file xong: dashboard đúng 15029; sửa Overview - card Findings/Relations đếm thật từ DB, auth not_run thêm nhãn "không đủ cơ sở", refresh dashboard khi mở case từ History.
+
 **Next action:** deploy HEAD (`df33e9d` + bản đếm) lên server; kiểm tra dashboard hiện số case thật và report HTML/PDF/CSV.

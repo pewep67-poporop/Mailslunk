@@ -17,7 +17,8 @@ from app.db import connect, init_db  # noqa: E402
 init_db()
 con = connect()
 for i in range(600):
-    result = json.dumps({"count": 1, "verdict": "suspicious" if i else "malicious_or_phishing"})
+    result = json.dumps({"count": 1, "verdict": "suspicious" if i else "malicious_or_phishing",
+                         "findings": [{"id": "H-001"}], "relations": {"count": 2, "relations": []}})
     con.execute("INSERT OR REPLACE INTO cases(id,ts,user,file,sha256,result,sig,uid) VALUES(?,?,?,?,?,?,?,?)",
                 (f"c{i:04d}", "2026-01-01", "u", f"{i}.eml", "a" * 64, result, "sig", "0" * 32))
 con.commit()
@@ -36,6 +37,8 @@ class CountTest(unittest.TestCase):
         self.assertEqual(out["messages"], 600)
         self.assertEqual(out["bad"], 1)
         self.assertEqual(out["warn"], 599)
+        self.assertEqual(out["findings"], 600)
+        self.assertEqual(out["relations"], 1200)
 
 
 if __name__ == "__main__":
