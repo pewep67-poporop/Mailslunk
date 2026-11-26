@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="ms_p7_")
 
-from app.report import render_report, render_pdf, case_signature  # noqa: E402
+from app.report import render_report, render_pdf, render_csv, case_signature  # noqa: E402
+from app.main import _report_parts  # noqa: E402
 
 ROW = {"id": "case1", "ts": "2026-01-01 00:00:00 UTC", "user": "tester",
        "file": "a.eml", "sha256": "a" * 64}
@@ -38,6 +39,12 @@ class ReportTest(unittest.TestCase):
         data = render_pdf(ROW, RESULT, lang="en")
         self.assertTrue(data.startswith(b"%PDF"))
         self.assertGreater(len(data), 1000)
+
+    def test_report_parts_and_csv(self):
+        b64, blob, geos = _report_parts(ROW, RESULT, "en")
+        self.assertEqual(b64, "")
+        self.assertEqual(blob, b"")
+        self.assertGreater(len(render_csv(ROW, RESULT, lang="en")), 50)
 
     def test_signature_session_bound(self):
         plain = case_signature(ROW, dict(RESULT, session_fingerprint="", signed_at=""))

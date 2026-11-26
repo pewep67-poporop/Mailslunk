@@ -1364,6 +1364,15 @@ async def forensic_post(case_id: str, kind: str, request: Request):
 # ---------------------------------------------------------------------------
 # Report & Administration (khôi phục từ baseline 5be0e15)
 # ---------------------------------------------------------------------------
+def _report_parts(row: dict, result: dict, lang: str):
+    """Ảnh bản đồ lược đồ cho báo cáo (local, không tile ngoài)."""
+    vals = [x["ip"] for x in (result.get("ipInfo") or []) if x.get("ip")][:15]
+    geos = [geo_lookup(v) for v in vals] if vals else []
+    blob = build_map(vals, geos) if vals else b""
+    b64 = base64.b64encode(blob).decode() if blob else ""
+    return b64, blob, geos
+
+
 @app.get("/api/report/{case_id}/verify")
 async def report_verify(case_id: str, request: Request):
     s = require_auth(request)
