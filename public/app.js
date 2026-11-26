@@ -1603,7 +1603,7 @@ async function loadRelations(focus = '') {
     const j = await (await fetch(url)).json();
     const g = j.graph || {}, idx = j.index || {};
     relGraphCache = g;
-    $('relStat').textContent = `${idx.messages || 0} emails · ${idx.actors?.length || 0} actors · ${idx.domains || 0} domains · ${idx.ips || 0} IPs · ${(g.edges||[]).length} edges`;
+    $('relStat').textContent = `${idx.messages || 0} emails · ${idx.actors_total ?? idx.actors?.length ?? 0} actors · ${idx.domains || 0} domains · ${idx.ips || 0} IPs · ${(g.edges||[]).length} edges`;
     const tb = $('relActors'); if (tb) tb.textContent = '';
     if (!(idx.actors || []).length && tb) tb.textContent = t('relNoData');
     for (const a of (idx.actors || []).slice(0, 80)) {
@@ -1618,6 +1618,48 @@ async function loadRelations(focus = '') {
       c.onclick = () => loadRelations(c.getAttribute('data-node'));
     });
   } catch (e) { $('relStat').textContent = t('errNetwork') + ' ' + e.message; }
+}
+
+async function saveForensic(kind, payload, msgBox) {
+  const cid = currentCase();
+  if (!cid) return;
+  try {
+    const r = await fetch(`/api/case/${cid}/forensic/${kind}`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'x-csrf': csrf },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json().catch(() => ({}));
+    msgBox.textContent = r.ok ? t('saved') : (j.error || r.status);
+    if (r.ok) renderCasePane();
+  } catch (e) { msgBox.textContent = t('errNetwork') + ' ' + e.message; }
+}
+
+function forensicForms(out) {
+  const vi = lang === 'vi';
+  const a = el('details', '', '');
+  a.append(el('summary', '', vi ? 'Thêm đánh giá (quan sát / suy luận / chưa đủ cơ sở)' : 'Add assessment'));
+  const ka = el('input'); ka.placeholder = 'observed / inference / unverified';
+  const ca = el('input'); ca.placeholder = vi ? 'Nhận định kèm chứng cứ' : 'Claim with evidence';
+  const ea = el('input'); ea.placeholder = vi ? 'Tham chiếu chứng cứ (H-001...)' : 'Evidence refs';
+  const la = el('input'); la.placeholder = vi ? 'Giới hạn / chưa xác minh' : 'Limitation';
+  const ba = el('button', '', vi ? 'Lưu đánh giá' : 'Save assessment'); ba.type = 'button';
+  const ma = el('span', 'hint', '');
+  ba.onclick = () => saveForensic('assessments',
+    { kind: ka.value.trim(), claim: ca.value.trim(), evidence_refs: ea.value.trim(), limitation: la.value.trim() }, ma);
+  a.append(ka, ca, ea, la, ba, ma);
+
+  const r = el('details', '', '');
+  r.append(el('summary', '', vi ? 'Thêm kiến nghị ứng phó / phòng ngừa' : 'Add response action'));
+  const ar = el('input'); ar.placeholder = vi ? 'Hành động' : 'Action';
+  const rr = el('input'); rr.placeholder = vi ? 'Lý do / căn cứ' : 'Rationale';
+  const kr = el('input'); kr.placeholder = 'response / prevention';
+  const br = el('button', '', vi ? 'Lưu kiến nghị' : 'Save response'); br.type = 'button';
+  const mr = el('span', 'hint', '');
+  br.onclick = () => saveForensic('responses',
+    { action: ar.value.trim(), rationale: rr.value.trim(), kind: kr.value.trim() }, mr);
+  r.append(ar, rr, kr, br, mr);
+  out.append(a, r);
 }
 
 async function renderCasePane() {
@@ -1655,7 +1697,9 @@ async function renderCasePane() {
       out.append(box);
     } catch (e) { out.append(el('p', 'hint', k + ': ' + e.message)); }
   }
+  forensicForms(out);
 }
+
 
 function renderTimeline(out, r) {
   const vi = lang === 'vi';

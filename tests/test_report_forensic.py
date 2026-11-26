@@ -46,6 +46,15 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(blob, b"")
         self.assertGreater(len(render_csv(ROW, RESULT, lang="en")), 50)
 
+    def test_signature_covers_timeline_and_annex_hash(self):
+        base = case_signature(ROW, RESULT)
+        changed = dict(RESULT)
+        changed["timeline_events"] = [{"ts": "2020-01-01T00:00:00Z", "event": "x"}]
+        self.assertNotEqual(base, case_signature(ROW, changed))
+        changed["exports"] = [{"name": "ioc.csv", "sha256": "a" * 64, "size": 10}]
+        html = render_report(ROW, changed, lang="en")
+        self.assertIn("a" * 64, html)
+
     def test_signature_session_bound(self):
         plain = case_signature(ROW, dict(RESULT, session_fingerprint="", signed_at=""))
         bound = case_signature(ROW, RESULT)

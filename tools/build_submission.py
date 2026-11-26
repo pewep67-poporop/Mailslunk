@@ -50,11 +50,7 @@ def build(case_id: str, dest: Path) -> Path:
     result = json.loads(row["result"] or "{}")
     dest.mkdir(parents=True, exist_ok=True)
 
-    (dest / "report.html").write_text(render_report(dict(row), result, lang=LANG), encoding="utf-8")
-    pdf = render_pdf(dict(row), result, lang=LANG)
-    if pdf:
-        (dest / "report.pdf").write_bytes(pdf)
-    (dest / "report.csv").write_text(render_csv(dict(row), result, lang=LANG), encoding="utf-8")
+    # Xuất các file phụ trợ TRƯỚC, rồi mới render báo cáo để phụ lục có hash thật.
     (dest / "ioc.csv").write_text(ioc_csv((result.get("ioc") or {}).get("iocs") or [], dict(row)), encoding="utf-8")
     (dest / "stix.json").write_text(json.dumps(ioc_stix((result.get("ioc") or {}).get("iocs") or [], dict(row)),
                                               indent=2, ensure_ascii=False), encoding="utf-8")
@@ -79,6 +75,20 @@ def build(case_id: str, dest: Path) -> Path:
         if f.is_file() and f.name != "manifest.sha256":
             hashes.append(f"{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.name}")
     (dest / "manifest.sha256").write_text("\n".join(hashes) + "\n", encoding="utf-8")
+    # Phụ lục báo cáo: hash/size thật của từng file export
+    exports = []
+    for f in sorted(dest.iterdir()):
+        if f.is_file() and f.name != "manifest.sha256":
+            exports.append({"name": f.name, "sha256": hashlib.sha256(f.read_bytes()).hexdigest(),
+                            "size": f.stat().st_size})
+    result["exports"] = exports
+    sig = row["sig"] or ""
+    (dest / "report.html").write_text(render_report(dict(row), result, lang=LANG, sig=sig), encoding="utf-8")
+    pdf = render_pdf(dict(row), result, lang=LANG, sig=sig)
+    if pdf:
+        (dest / "report.pdf").write_bytes(pdf)
+    (dest / "report.csv").write_text(render_csv(dict(row), result, lang=LANG), encoding="utf-8")
+
     (dest / "README.txt").write_text(
         f"Gói nộp bài offline - case {case_id}\n"
         f"Tạo lúc: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n"

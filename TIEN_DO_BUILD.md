@@ -78,4 +78,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 
 - 2026-11-27: nâng GRAPH_MAX_CASES 5000→30000; dọn _REP_KEYS + tool ML cũ + comment thừa; rà soát xuất báo cáo/trích xuất/dữ liệu.
 
+- 2026-11-27: fix 5 điểm tồn tại: phụ lục hash thật, case_signature phủ timeline/assessment/response, map dùng tọa độ snapshot, form nhập đánh giá/kiến nghị trên Case file, stat actors đúng tổng; build_submission render report sau khi có exports. 13/13 test PASS.
+
 **Next action:** deploy HEAD (`df33e9d` + bản đếm) lên server; kiểm tra dashboard hiện số case thật và report HTML/PDF/CSV.

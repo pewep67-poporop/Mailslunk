@@ -1387,7 +1387,7 @@ async def global_graph(request: Request, focus: str = "", limit: int = 200, csv_
     actors = idx["actors"]
     top = [{"id": "actor:" + a, "label": a, "sent": v["sent"], "received": v["received"]}
            for a, v in sorted(actors.items(), key=lambda x: -(x[1]["sent"] + x[1]["received"]))[:60]]
-    return {"graph": g, "index": {"actors": top,
+    return {"graph": g, "index": {"actors": top, "actors_total": len(idx["actors"]),
                                   "messages": len(idx["messages"]),
                                   "domains": len(idx["domains"]),
                                   "ips": len(idx["ips"])}}
@@ -1518,13 +1518,15 @@ def _safe_name(v: str) -> str:
 
 
 def _report_parts(row: dict, result: dict, lang: str):
-    """Ảnh bản đồ lược đồ cho báo cáo (local, không tile ngoài)."""
-    vals = [x["ip"] for x in (result.get("ipInfo") or []) if x.get("ip")][:15]
-    geos = [geo_lookup(v) for v in vals] if vals else []
+    """Ảnh bản đồ lược đồ CHỈ từ tọa độ đã lưu lúc phân tích (không lookup lại)."""
+    infos = [x for x in (result.get("ipInfo") or []) if x.get("ip")][:15]
+    vals = [x["ip"] for x in infos]
+    geos = [x.get("geo") or {} for x in infos]
+    if not any((g.get("location") or {}).get("latitude") is not None for g in geos):
+        return "", b"", []
     blob = build_map(vals, geos) if vals else b""
     b64 = base64.b64encode(blob).decode() if blob else ""
     return b64, blob, geos
-
 
 @app.get("/api/report/{case_id}/verify")
 async def report_verify(case_id: str, request: Request):

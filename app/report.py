@@ -70,6 +70,14 @@ def case_signature(row: dict, result: dict) -> str:
         "score": result.get("score"), "verdict": result.get("verdict"),
         "findings": findings,
         "iocs": (result.get("ioc") or {}).get("iocs") or [],
+        "extra": {
+            "timeline": result.get("timeline_events") or [],
+            "assessments": result.get("assessments") or [],
+            "responses": result.get("responses") or [],
+            "screenshots": result.get("screenshots") or [],
+            "team": result.get("team") or [],
+            "exports": result.get("exports") or [],
+        },
     }
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -250,12 +258,17 @@ def _forensic_blocks(result: dict, lang: str, L: dict) -> dict:
     for a in (result.get("responses") or [])[:30]:
         responses.append([a.get("action") or "-", a.get("rationale") or "-"])
 
-    exports = (result.get("exports") or [])
+    exports = result.get("exports") or []
     if not exports:
         exports = ["report.pdf", "report.html", "ioc.csv", "relations.csv",
-                   "auth_summary.csv", "dns_snapshot.json", "timeline.csv",
-                   "manifest.sha256"]
-    annex = [[name, "-", "-"] for name in exports]
+                   "auth_summary.csv", "dns_snapshot.json", "timeline.csv"]
+    annex = []
+    for e in exports:
+        if isinstance(e, dict):
+            annex.append([e.get("name") or "-", e.get("sha256") or "-",
+                          e.get("size") if e.get("size") is not None else "-"])
+        else:
+            annex.append([e, "-", "-"])
     return {"timeline": timeline, "assessments": assessments,
             "responses": responses, "annex": annex}
 
