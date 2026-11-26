@@ -259,6 +259,8 @@ Chữ ký là **fingerprint toàn vẹn** (deterministic) để kiểm tra dữ 
 | `TRUST_PROXY` | (rỗng) | `1` khi đứng sau reverse proxy tin cậy |
 | `THREATSCAN_ENABLED` | 1 | Bật quét nội dung độc hại offline (heuristic + engine local nếu có) |
 | `THREATSCAN_TIMEOUT` | 15 | Timeout (giây) cho engine/tool quét |
+| `RATE_ANALYZE_STREAM` | 1200 | Số request `/api/analyze/stream` mỗi phút/IP (mỗi file = 1 request) |
+| `RATE_ANALYZE_BATCH` | 200 | Số request `/api/analyze` mỗi phút/IP |
 | `THREATSCAN_MAX_BYTES` | 26214400 | Giới hạn byte quét mỗi tệp đính kèm |
 | `SANDBOX_URL` | (rỗng) | Adapter sandbox cục bộ (chỉ localhost/private) |
 | `BODY_MAX_BYTES` | 524288 | Giới hạn body mỗi thư (byte) |
@@ -364,3 +366,11 @@ Khuyến nghị kiểm thử thủ công trên UI: streaming + Pause/Stop/Cancel
 - Báo cáo HTML/PDF: TOC, timeline, 3 nhóm quan sát/suy luận/chưa đủ cơ sở, ứng phó, phụ lục export, seal SHA-256.
 - `tools/autopsy_handoff.py` + `tools/build_submission.py`: gói bàn giao Autopsy và ZIP nộp bài.
 - Chi tiết tiêu chuẩn/test: `TIEN_DO_BUILD.md`, `BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md`.
+
+### 3.5 Xử lý lỗi "Quá nhiều yêu cầu (rate)" khi analyze nhiều file
+`/api/analyze/stream` nhận **mỗi file là một request**, nên lô lớn có thể vượt giới hạn/phút.
+- Server trả `429 {"error":"rate"}` kèm header `Retry-After: 60`.
+- Client tự **đợi theo Retry-After rồi thử lại** (tối đa 6 lần), vẫn giữ Pause/Stop/Cancel; không còn dừng cả lô.
+- Nếu cần nới thêm: đặt `RATE_ANALYZE_STREAM` trong `.env` (mặc định 1200). Không nên đặt quá cao vô hạn — vẫn là giới hạn chống lạm dụng.
+- Dấu hiệu vẫn bị chặn: message `Quá nhiều yêu cầu - ... (rate)` trong status. Khi đó kiểm tra reverse proxy/nginx có giới hạn `limit_req` riêng hay không.
+

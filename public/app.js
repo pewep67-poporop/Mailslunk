@@ -741,6 +741,12 @@ const OK_EXT = /\.(eml|emlx|mht|mhtml|msg|mbox|mbx|txt)$/i;
 const PICK_FILE_MAX = 80 * 1024 * 1024;
 const PICK_TOTAL_MAX = 2000;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const sleepAbortable = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
+  const onAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+  const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+  signal.addEventListener('abort', onAbort, { once: true });
+});
 
 function addFiles(fileList, prefix = '') {
   const items = Array.from(fileList || []).map(f => ({
@@ -857,10 +863,6 @@ class StreamError extends Error {
 }
 
 async function streamOne(item, idx, total, basePct) {
-  const fd = new FormData();
-  fd.append('file', item.f, item.f.name);
-  fd.append('platform', $('platform').value || 'auto');
-  fd.append('lang', lang);
   const ac = new AbortController();
   job.ac = ac;
   const pctFor = p => Math.min(99.5, basePct + (p / 100) * (100 / total));
@@ -868,7 +870,24 @@ async function streamOne(item, idx, total, basePct) {
     `${t('liveFile')}: ${item.path}`,
     `${t('liveStage')}: ${t('stepUpload')}`,
     `${fSize(item.f.size)}`, pctFor(2), true);
-  const r = await fetch('/api/analyze/stream', { method: 'POST', body: fd, headers: { 'x-csrf': csrf }, signal: ac.signal });
+
+  // Mỗi file = 1 request. Nếu server trả 429 (quá nhiều request trong 1 phút),
+  // đợi theo Retry-After rồi thử lại thay vì dừng cả lô. Stop/Cancel vẫn hủy được.
+  let r = null;
+  for (let attempt = 0; attempt <= 6; attempt++) {
+    const fd = new FormData();
+    fd.append('file', item.f, item.f.name);
+    fd.append('platform', $('platform').value || 'auto');
+    fd.append('lang', lang);
+    r = await fetch('/api/analyze/stream', { method: 'POST', body: fd, headers: { 'x-csrf': csrf }, signal: ac.signal });
+    if (r.status !== 429) break;
+    const j = await r.json().catch(() => ({}));
+    if (attempt === 6) throw new StreamError(apiCode(j) || 'rate', j.detail || '');
+    const waitS = Math.min(60, Math.max(1, Number(r.headers.get('retry-after')) || 60));
+    setRunState(`${t('errRate')} - ${waitS}s (${idx + 1}/${total})`, 'warn');
+    await sleepAbortable(waitS * 1000, ac.signal);
+  }
+  if (!r) throw new StreamError('parse');
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
     throw new StreamError(apiCode(j) || (r.status === 401 ? 'auth' : 'upload'));
@@ -901,7 +920,7 @@ async function streamOne(item, idx, total, basePct) {
         const rr = result || {};
         setLive(`${t('liveTitle')} ${idx + 1}/${total}`,
           `${t('liveFile')}: ${rr.custody?.original || item.path}`,
-          `${t('liveStage')}: ${String(rr.format || '').toUpperCase()} × ${rr.count || 0}`,
+          `${t('liveStage')}: ${String(rr.format || '').toUpperCase()} x ${rr.count || 0}`,
           `${t('verdict')}: ${verdictText(rr.verdict)} · ${rr.score}/100 · ${rr.client?.label || ''}`,
           p, false);
       } else if (ev.type === 'error') {

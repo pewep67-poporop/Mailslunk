@@ -59,6 +59,7 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 - 2026-11-26: GATE 0.5 xong — xóa 6 module runtime + 8 tool/test ML/SIEM; `app/dns_local.py` stub offline; compile/import OK.
 - 2026-11-26: P1-P10 hoàn tất. Tổng 31/31 unit test PASS; py_compile + node --check OK.
 - 2026-11-26: `BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md` đã tạo; docs cập nhật.
-- 2026-11-26: rà soát `HUONG_DAN_SETUP_PYTHON.md`/`README.md` (bỏ LIVE_DNS=1/Local AI/SIEM); tạo `KIEN_TRUC_HE_THONG.md` (8 sơ đồ + giải thích).
+- 2026-11-26: rà soát hướng dẫn + `KIEN_TRUC_HE_THONG.md`; Linux run/systemd; Python 3.14 notes.
+- 2026-11-26: fix rate analyze streaming: limit 80→1200 (`RATE_ANALYZE_STREAM`), `Retry-After:60`, client tự retry 429; docs/.env cập nhật; py_compile + node --check OK.
 
-**Next action:** commit/push tài liệu; không còn phase nào trong checklist.
+**Next action:** commit/push fix rate; không còn phase nào trong checklist.

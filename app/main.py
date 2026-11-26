@@ -154,8 +154,10 @@ class RateLimit(BaseHTTPMiddleware):
             "/api/login": (10, f"login:{ip}"),
             "/api/register": (5, f"reg:{ip}"),
             "/api/recover": (5, f"rec:{ip}"),
-            "/api/analyze": (40, f"an:{ip}"),
-            "/api/analyze/stream": (80, f"ans:{ip}"),
+            "/api/analyze": (int(os.getenv("RATE_ANALYZE_BATCH", "200") or 200), f"an:{ip}"),
+            # Streaming gửi MỖI file = 1 request; giới hạn cũ (80/phút) chặn
+            # cả lô lớn. Give authenticated batch work room, vẫn có cap.
+            "/api/analyze/stream": (int(os.getenv("RATE_ANALYZE_STREAM", "1200") or 1200), f"ans:{ip}"),
             "/api/urls/import": (30, f"ui:{ip}"),
             "/api/ip": (30, f"tool:{ip}"),
             "/api/dns": (30, f"tool:{ip}"),
@@ -163,7 +165,8 @@ class RateLimit(BaseHTTPMiddleware):
         if p in limits:
             n, key = limits[p]
             if not rate_check(key, n):
-                return JSONResponse({"error": "rate"}, status_code=429)
+                return JSONResponse({"error": "rate"}, status_code=429,
+                                    headers={"Retry-After": "60"})
         if p == "/api/profile/avatar" and request.method == "POST" and not rate_check(f"av:{ip}", AVATAR_RATE_MAX):
             return JSONResponse({"error": "rate"}, status_code=429)
         return await call_next(request)
