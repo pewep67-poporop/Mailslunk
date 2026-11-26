@@ -292,3 +292,70 @@ flowchart LR
 
 ## 11. Global Relations (bổ sung)
 `app/global_graph.py` + `/api/graph/global` + tab **Relations** thay cho DNS/IP-Geo: index toàn bộ case → cạnh `SENT/TO/ORIGIN_IP/...` có evidence → UI lọc/index/SVG/CSV. Xem `BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md` mục 13.
+
+---
+
+## 12. Kiến trúc hoàn chỉnh sau fix cuối (tham chiếu chính)
+
+### 12.1 Sơ đồ tổng thể (cập nhật)
+
+```mermaid
+flowchart TB
+  subgraph UI["SPA - public/index.html + app.js + app.css + fx.js"]
+    TABS["8 tab: Analysis / Results / Guide / History / Relations / Case file / Admin / Logs"]
+    DASH["Dashboard: Cases / Messages / Malicious / Suspicious / Clean / Findings / Relations"]
+    RES["Results: Overview / Messages / URLs / Graph / Timeline + Total analysed"]
+    REL["Relations: index 30.000 thư + Message-ID/From/To + filter + SVG + CSV"]
+    CASE["Case file: 8 sections + form Assessment/Response"]
+  end
+
+  subgraph API["FastAPI app/main.py"]
+    SEC["Auth / CSRF / RBAC(uid) / rate limit stream 6000 + pace 60ms"]
+    ANA["/api/analyze/stream + /api/analyze"]
+    CASEAPI["/api/cases(limit 30000) + /api/cases/count + /api/case/* + /api/forensic/*"]
+    REPORT["/api/report/{id} HTML/PDF/CSV + /verify"]
+    GAPI["/api/graph/global + /api/graph/index"]
+  end
+
+  subgraph CORE["Lõi offline - analysis/ + app/"]
+    PARSE["parsers/bodies: EML/MSG/MBOX/Maildir/TXT + client/platform"]
+    RULES["analysis/rules/indicators.json + urls/threatscan: rule/fact có source_field"]
+    AUTH["authcheck + dns_local(snapshot): SPF/DKIM/DMARC từ AR/snapshot"]
+    EXT["attachments + oletools/pefile/bs4/zipfile: hash/magic/macro/archive"]
+    RELMOD["relations + global_graph + graph + mapgen + timeline + ioc"]
+    SIGN["report.py: 20 mục + seal SHA-256 + phụ lục hash thật"]
+  end
+
+  subgraph STORE["DATA_DIR"]
+    DB[("SQLite: cases + 8 bảng pháp chứng + url_imports + sessions")]
+    FS["evidence/ read-only, messages/, quarantine/, uploads/, reports/"]
+    SNAP["dns_snapshot.json + GeoLite2 mmdb(local)"]
+  end
+
+  subgraph OUT["Xuất/bàn giao"]
+    ZIP["build_submission.py → ZIP: report + ioc/STIX + relations + graph + slide + manifest"]
+    HAND["auth_dns_export.py + autopsy_handoff.py + verify_dataset.py"]
+  end
+
+  UI <--> API
+  API --> CORE
+  CORE <--> STORE
+  CORE --> OUT
+  OUT --> UI
+```
+
+### 12.2 Các fix cuối đã áp dụng (đồng bộlocal + VM)
+1. **Phụ lục export thật**: `build_submission` xuất file phụ trước → tính `sha256/size` → nhét `result.exports` → mới render report → phụ lục có hash thật.
+2. **Chữ ký phủ đủ**: `case_signature` thêm `extra = timeline_events/assessments/responses/screenshots/team/exports`; mọi ghi pháp chứng qua API đều re-sign; verify khớp.
+3. **Map snapshot**: `_report_parts` dùng `result.ipInfo[].geo` lưu lúc phân tích, không gọi `geo_lookup()` lại lúc xuất.
+4. **Form pháp chứng**: tab Case file có 2 form thêm đánh giá (observed/inference/unverified) và kiến nghị ứng phó; lưu qua POST + re-sign.
+5. **Stat đúng**: `relStat` dùng `actors_total` (3026), không phải top 60; History limit 30000, text đúng; favicon SVG local hết 404.
+6. **Graph 30.000 case**: index qua SQLite JSON1 (nhanh ~6–10s), nhóm đủ Thư/Actor/Domain/IP/URL/Hash.
+
+### 12.3 Trạng thái nghiệm thu
+- HEAD `d2c5dd3` = `origin/main` trên local **và** VM; working tree sạch.
+- 13/13 unit test PASS; `py_compile` + `node --check` OK; console browser 0 lỗi.
+- `/api/health` 200 (`offline:true`); mọi endpoint báo cáo/xuất/graph 200.
+- Dữ liệu: 15.029 case; Relations index 30.000; phân loại bad 48 / suspicious 14.971 / clean 10.
+
+> File này là nguồn tham chiếu kiến trúc. Mọi thay đổi sau này phải cập nhật đồng thời `HUONG_DAN_SETUP_PYTHON.md`, `TIEN_DO_BUILD.md` và `BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md`.
