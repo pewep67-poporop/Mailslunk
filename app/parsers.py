@@ -100,6 +100,8 @@ def parse_eml_bytes(raw: bytes) -> dict:
         "subject": str(msg.get("Subject", "")),
         "date": str(msg.get("Date", "")),
         "message_id": str(msg.get("Message-ID", "")),
+        "inReplyTo": str(msg.get("In-Reply-To", "")),
+        "references": str(msg.get("References", "")),
         "originIPs": extract_ips(headers),
         "replyTo": str(msg.get("Reply-To", "")),
         "returnPath": str(msg.get("Return-Path", "")),
@@ -230,7 +232,8 @@ def load_messages(name: str, raw: bytes) -> list:
             return [{"from": str(m.sender or ""), "to": str(m.to or ""),
                      "cc": str(m.cc or ""), "bcc": str(m.bcc or ""),
                      "subject": str(m.subject or ""), "date": str(m.date or ""),
-                     "message_id": "", "originIPs": extract_ips(headers),
+                     "message_id": "", "inReplyTo": "", "references": "",
+                     "originIPs": extract_ips(headers),
                      "replyTo": "", "returnPath": "", "body": str(m.body or "")[:8192]}]
     if fmt == "txt":
         return [parse_text_bytes(raw)]

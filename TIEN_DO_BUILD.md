@@ -28,7 +28,7 @@ L1 điểm theo quy trình/bằng chứng · L2 giải thích · L3 thiếu thì
 - [x] **P2** — `app/pipeline.py` điều phối nạp dataset/gọi lõi/xuất báo cáo; `tests/test_pipeline.py` 2/2 OK; auth/streaming giữ nguyên.
 - [x] **P3** — `dns_local.py` snapshot-only + `tools/dns_snapshot.py` + `tools/auth_dns_export.py`; `tests/test_dns_local.py` 5/5 OK; không live DNS.
 - [x] **P4** — `tools/verify_dataset.py` (CSV/JSON manifest, exit 0/1, CSV+JSON report); `tests/test_verify_dataset.py` 2/2 OK.
-- [ ] **P5** — `relations.py` + mở rộng `graph.py` (hop, GeoIP, relation, `to_png`) + UI tương tác (H1+H2+H4+H6; H3/H5 phụ).
+- [x] **P5** — `relations.py` (thread/shared-IP/sender/hash/URL + TIME_NEAR inference), `graph.py` hop/GeoIP/relation + `to_png`, UI Graph filter/list; `/api/case/{id}/relations(.csv)`; `tests/test_relations.py` 5/5 OK.
 - [ ] **P6** — schema/API mới: `case_meta, evidence_inventory, custody_events, timeline_events, assessments, responses, screenshots, team_assignment, relations`; uid ownership; re-sign.
 - [ ] **P7** — `report.py` mở rộng chuẩn forensic: TOC, phương pháp, xyác thực, timeline, 3 nhóm kết luận, kiến nghị, phụ lục export, seal+hash phiên.
 - [ ] **P8** — `tools/autopsy_handoff.py` cho PST/OST/OLE/carving.
@@ -56,6 +56,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 ## 6. Nhật ký tiến độ
 - 2026-11-26: phê duyệt kế hoạch; tạo file bàn giao; GATE 0 xong (`1480e2e` đã push).
 - 2026-11-26: GATE 0.5 xong — xóa 6 module runtime + 8 tool/test ML/SIEM; `app/dns_local.py` stub offline; compile/import OK.
-- 2026-11-26: P1 (10/10), P2 (2/2), P3 (5/5), P4 (2/2) xong; compile OK.
+- 2026-11-26: P1 (10/10), P2 (2/2), P3 (5/5), P4 (2/2), P5 (5/5) xong; compile/JS OK.
 
-**Next action:** P5 — `app/relations.py` (message↔message có evidence), mở rộng `graph.py` (hop/GeoIP/relation + to_png), UI Graph pane tương tác/filter; test.
+**Next action:** P6 — schema/API pháp chứng: case_meta, evidence_inventory, custody_events, timeline_events, assessments, responses, screenshots, team_assignment; uid ownership + re-sign; test.

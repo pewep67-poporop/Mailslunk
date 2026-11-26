@@ -89,10 +89,19 @@ def build(result: dict) -> dict:
                 if dom:
                     did = g.node("domain:" + dom, dom, "domain", f"recipient domain {dom}")
                     g.edge(rid, did, "USES_DOMAIN", f"address {ad}")
-        # Origin IPs
+        # Origin IPs (kèm GeoLite2 local nếu có)
+        geo_by_ip = {x.get("ip"): (x.get("geo") or {}) for x in (result.get("ipInfo") or [])}
         for ip in (m.get("originIPs") or [])[:8]:
-            iid = g.node("ip:" + ip, ip, "ip", f"Received header of message #{i + 1}")
+            geo = geo_by_ip.get(ip) or {}
+            iid = g.node("ip:" + ip, ip, "ip", f"Received header of message #{i + 1}",
+                         geo={"country": geo.get("country"), "city": geo.get("city"),
+                              "asn": geo.get("asn"), "location": geo.get("location")})
             g.edge(mid, iid, "ORIGIN_IP", f"Received: {ip}")
+            country = geo.get("country")
+            if country:
+                lid = g.node("geo:" + str(country), str(country), "geo",
+                             f"GeoLite2 local: {country}")
+                g.edge("ip:" + ip, lid, "LOCATED_IN", f"GeoLite2: {ip} -> {country}")
     # URLs: attach to the message index that carried them, else case level.
     for u in (result.get("urls") or [])[:40]:
         url = str(u.get("url") or "")
@@ -113,6 +122,25 @@ def build(result: dict) -> dict:
         mi = a.get("m")
         src = f"msg:{mi}" if isinstance(mi, int) and f"msg:{mi}" in g.nodes else case
         g.edge(src, aid, "HAS_ATTACHMENT", f"{a.get('name')} ({a.get('size')} B)")
+    # SMTP hops (từ field Received thật)
+    for h in ((result.get("routing") or {}).get("hops") or [])[:20]:
+        hid = f"hop:{h.get('idx')}"
+        g.node(hid, f"hop #{h.get('idx')}", "hop",
+               (h.get("raw") or f"{h.get('from')} by {h.get('by')}")[:240],
+               ts=h.get("ts"), delayMs=h.get("delayMs"))
+        if h.get("ip"):
+            g.edge(hid, "ip:" + h["ip"], "HOP_IP", f"Received hop #{h.get('idx')}: {h['ip']}")
+    if msgs:
+        first_hop = "hop:1"
+        if first_hop in g.nodes:
+            g.edge("msg:0", first_hop, "RECEIVED_VIA", "topmost Received header of message #1")
+
+    # Quan hệ message↔message (có evidence, từ app/relations.py)
+    for rel in (result.get("relations") or {}).get("relations", []) or []:
+        src, dst = f"msg:{rel.get('src_msg')}", f"msg:{rel.get('dst_msg')}"
+        if src in g.nodes and dst in g.nodes:
+            g.edge(src, dst, rel.get("kind") or "RELATED", rel.get("evidence") or "")
+
     # Drop edges pointing at nodes that were truncated away.
     g.edges = [e for e in g.edges if e["src"] in g.nodes and e["dst"] in g.nodes]
     return {"nodes": list(g.nodes.values())[:MAX_NODES],
@@ -123,8 +151,8 @@ def build(result: dict) -> dict:
 def _layout(nodes):
     """Deterministic rings by kind; no physics, so the same case renders the same."""
     rings = [("case", 0, 0), ("message", 1, 150), ("actor", 2, 270),
-             ("domain", 3, 370), ("ip", 3, 370), ("url", 4, 455),
-             ("attachment", 4, 455)]
+             ("domain", 3, 370), ("ip", 3, 370), ("hop", 3, 370),
+             ("geo", 4, 455), ("url", 4, 455), ("attachment", 4, 455)]
     pos = {}
     for kind, ring, radius in rings:
         group = [n for n in nodes if n["kind"] == kind]
@@ -140,8 +168,8 @@ def _layout(nodes):
 
 
 _COLORS = {"case": "#1f2937", "message": "#2563eb", "actor": "#7c3aed",
-           "domain": "#0891b2", "ip": "#dc2626", "url": "#d97706",
-           "attachment": "#059669"}
+           "domain": "#0891b2", "ip": "#dc2626", "hop": "#7c3aed",
+           "geo": "#0e7490", "url": "#d97706", "attachment": "#059669"}
 
 
 def to_svg(graph: dict, lang: str = "en") -> str:
@@ -174,13 +202,41 @@ def to_svg(graph: dict, lang: str = "en") -> str:
     # legend
     lx = 24
     for kind, label in [("case", "Case"), ("message", "Message"), ("actor", "Actor"),
-                        ("domain", "Domain"), ("ip", "IP"), ("url", "URL"),
-                        ("attachment", "Attachment")]:
+                        ("domain", "Domain"), ("ip", "IP"), ("hop", "Hop"),
+                        ("geo", "Geo"), ("url", "URL"), ("attachment", "Attachment")]:
         out.append(f'<circle cx="{lx + 6}" cy="760" r="6" fill="{_COLORS[kind]}"/>')
         out.append(f'<text x="{lx + 17}" y="764" font-family="Arial" font-size="12" fill="#334155">{_esc(label)}</text>')
         lx += 120
     out.append("</svg>")
     return "".join(out)
+
+
+def to_png(graph: dict, lang: str = "en") -> bytes:
+    """PNG cho PDF/report (HTML dùng SVG). Không cần thư viện ngoài."""
+    try:
+        from PIL import Image, ImageDraw
+    except Exception:
+        return b""
+    import io as _io
+    nodes = graph.get("nodes") or []
+    edges = graph.get("edges") or []
+    pos = _layout(nodes)
+    img = Image.new("RGB", (1200, 800), "#f8fafc")
+    d = ImageDraw.Draw(img)
+    for e in edges:
+        if e["src"] in pos and e["dst"] in pos:
+            x1, y1 = pos[e["src"]]
+            x2, y2 = pos[e["dst"]]
+            d.line([(x1, y1), (x2, y2)], fill="#94a3b8", width=1)
+    for n in nodes:
+        x, y = pos.get(n["id"], (600, 400))
+        r = 30 if n["kind"] == "case" else 16
+        color = _COLORS.get(n["kind"], "#64748b")
+        d.ellipse([x - r, y - r, x + r, y + r], fill=color, outline="#ffffff", width=2)
+        d.text((x - 20, y - 5), str(n.get("label") or "")[:18], fill="#ffffff")
+    out = _io.BytesIO()
+    img.save(out, "PNG", optimize=True)
+    return out.getvalue()
 
 
 def summary(result: dict) -> dict:

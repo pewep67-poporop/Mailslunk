@@ -816,6 +816,11 @@ def _analyze_one(fname: str, raw: bytes, user: str, src_path: str = None,
               "dns": dns_map, "ipInfo": ip_info, "offline": not LIVE_DNS}
     result["ioc"] = ioc_extract(result)
     try:
+        from .relations import build as build_relations
+        result["relations"] = build_relations(result)
+    except Exception:
+        result["relations"] = {"relations": [], "count": 0, "byKind": {}}
+    try:
         result["graph"] = entity_graph.summary(result)
     except Exception:
         result["graph"] = {"nodes": 0, "edges": 0, "byKind": {}, "truncated": False}
@@ -1016,6 +1021,19 @@ async def case_graph(case_id: str, request: Request, lang: str = "en"):
     _, result = _case_for(s, case_id)
     g = entity_graph.build(result)
     return {"graph": g, "summary": entity_graph.summary(result), "lang": lang}
+
+
+@app.get("/api/case/{case_id}/relations")
+async def case_relations(case_id: str, request: Request, csv_out: int = 0):
+    s = require_auth(request)
+    _, result = _case_for(s, case_id)
+    rel = result.get("relations") or {"relations": [], "count": 0, "byKind": {}}
+    if csv_out:
+        from .relations import to_csv
+        return PlainTextResponse(to_csv(rel.get("relations") or [], case_id),
+                                 media_type="text/csv; charset=utf-8",
+                                 headers={"Content-Disposition": f'attachment; filename="{case_id}-relations.csv"'})
+    return {"caseId": case_id, **rel}
 
 
 @app.get("/api/case/{case_id}/graph.svg")

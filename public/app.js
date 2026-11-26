@@ -1487,13 +1487,38 @@ async function renderUrls(out, r) {
 
 async function renderGraph(out, r) {
   const cid = r.custody.caseId;
+  const vi = lang === 'vi';
   out.append(el('h4', '', t('resGraph')));
   const img = el('img', 'graphimg');
   img.alt = t('resGraph');
   img.src = `/api/case/${cid}/graph.svg?lang=${lang}&t=${Date.now()}`;
   out.append(img);
   const s = r.graph || {};
-  out.append(el('p', 'summary', `${s.nodes || 0} nodes · ${s.edges || 0} edges`));
+  out.append(el('p', 'summary', `${s.nodes || 0} nodes / ${s.edges || 0} edges`));
+
+  const rel = r.relations || {};
+  const items = rel.relations || [];
+  out.append(el('h4', '', vi
+    ? `Quan hệ giữa các thư (${rel.count || items.length})`
+    : `Message relations (${rel.count || items.length})`));
+  const filt = el('select');
+  const kinds = ['ALL', ...Array.from(new Set(items.map(x => x.kind)))];
+  for (const k of kinds) filt.append(el('option', '', k === 'ALL' ? (vi ? 'Tất cả' : 'All') : k));
+  const ul = el('ul', 'att');
+  const draw = () => {
+    ul.textContent = '';
+    for (const x of items.filter(i => filt.value === 'ALL' || i.kind === filt.value)) {
+      const li = el('li', '', `#${x.src_msg + 1} -> #${x.dst_msg + 1} - ${x.kind}`);
+      li.title = `${x.evidence || ''} [${x.confidence || 'observed'}]`;
+      ul.append(li);
+    }
+  };
+  filt.onchange = draw;
+  out.append(filt, ul);
+  draw();
+  const a = el('a', '', vi ? 'Tai CSV quan he' : 'Download relations CSV');
+  a.href = `/api/case/${cid}/relations?csv_out=1`;
+  out.append(a);
 }
 
 // ---------------------------------------------------------------------------
