@@ -26,7 +26,7 @@ L1 điểm theo quy trình/bằng chứng · L2 giải thích · L3 thiếu thì
 - [x] **GATE 0.5** — gỡ SIEM/reputation/LLM/ML/live DNS; `dns_local.py` stub offline; requirements/env/docs/tests đã chỉnh; compile OK.
 - [x] **P1** — `analysis/rules/indicators.json` + `tests/test_rules.py` (10/10 OK); `urls.py`/`threatscan.py` dùng `bs4/idna/urllib.parse/oletools/pefile/zipfile/Pillow/defusedxml`; bỏ brand-lookalike/YARA/ClamAV/sandbox.
 - [x] **P2** — `app/pipeline.py` điều phối nạp dataset/gọi lõi/xuất báo cáo; `tests/test_pipeline.py` 2/2 OK; auth/streaming giữ nguyên.
-- [ ] **P3** — `dns_local.py` + `tools/dns_snapshot.py` + `tools/auth_dns_export.py` (SPF/DKIM/DMARC từ header AR trước, snapshot sau, không có → not_run).
+- [x] **P3** — `dns_local.py` snapshot-only + `tools/dns_snapshot.py` + `tools/auth_dns_export.py`; `tests/test_dns_local.py` 5/5 OK; không live DNS.
 - [ ] **P4** — `tools/verify_dataset.py` SHA-256 vs dataset gốc; exit 1 khi mismatch; biên bản.
 - [ ] **P5** — `relations.py` + mở rộng `graph.py` (hop, GeoIP, relation, `to_png`) + UI tương tác (H1+H2+H4+H6; H3/H5 phụ).
 - [ ] **P6** — schema/API mới: `case_meta, evidence_inventory, custody_events, timeline_events, assessments, responses, screenshots, team_assignment, relations`; uid ownership; re-sign.
@@ -56,6 +56,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 ## 6. Nhật ký tiến độ
 - 2026-11-26: phê duyệt kế hoạch; tạo file bàn giao; GATE 0 xong (`1480e2e` đã push).
 - 2026-11-26: GATE 0.5 xong — xóa 6 module runtime + 8 tool/test ML/SIEM; `app/dns_local.py` stub offline; compile/import OK.
-- 2026-11-26: P1 xong (10/10 test); P2 xong (2/2 test), compile/import OK.
+- 2026-11-26: P1 (10/10), P2 (2/2), P3 (5/5) xong; compile OK.
 
-**Next action:** P3 — thay `dns_local.py` stub bằng snapshot thật: `tools/dns_snapshot.py` (nhập zone/JSON), `tools/auth_dns_export.py` (gói handoff SPF/DKIM/DMARC/DNS), wire `authcheck`/`enrichment` sang snapshot; test offline.
+**Next action:** P4 — `tools/verify_dataset.py`: đọc manifest `path,sha256,size`, so với dataset gốc, exit code 0/1, ghi biên bản; unit test.
