@@ -1717,22 +1717,14 @@ Object.assign(I18N.vi, {
 // ---------------------------------------------------------------------------
 async function loadDashboard() {
   try {
-    const r = await api('/api/cases?limit=500');
+    const r = await api('/api/cases/count');
     const j = await r.json().catch(() => ({}));
     if (!r.ok) return;
-    const cases = Array.isArray(j.cases) ? j.cases : [];
-    let msgs = 0, bad = 0, warn = 0, ok = 0;
-    for (const c of cases) {
-      msgs += Number(c.count) || 0;
-      if (c.verdict === 'malicious_or_phishing') bad++;
-      else if (c.verdict === 'suspicious') warn++;
-      else if (c.verdict === 'clean') ok++;
-    }
-    if ($('dashCases')) $('dashCases').textContent = String(cases.length);
-    if ($('dashMessages')) $('dashMessages').textContent = String(msgs);
-    if ($('dashBad')) $('dashBad').textContent = String(bad);
-    if ($('dashWarn')) $('dashWarn').textContent = String(warn);
-    if ($('dashOk')) $('dashOk').textContent = String(ok);
+    if ($('dashCases')) $('dashCases').textContent = String(j.cases || 0);
+    if ($('dashMessages')) $('dashMessages').textContent = String(j.messages || 0);
+    if ($('dashBad')) $('dashBad').textContent = String(j.bad || 0);
+    if ($('dashWarn')) $('dashWarn').textContent = String(j.warn || 0);
+    if ($('dashOk')) $('dashOk').textContent = String(j.ok || 0);
     let findings = 0, relations = 0;
     for (const r of lastResults || []) {
       findings += (r.findings || []).length;

@@ -97,5 +97,9 @@ python tools/autopsy_handoff.py <case_id> ./autopsy_<case_id>
 - Thiếu mốc → ghi `unverified`, không suy đoán; không lấy thời gian từ tên file/thứ tự file.
 - Hiển thị: sub-tab **Results → Timeline**, tab **Case file → timeline**, báo cáo mục **Timeline sự kiện** (PDF/HTML), export `timeline.csv`.
 
-## 11. Kết luận
+## 11. Đếm case thật cho dashboard
+- `/api/cases` có `limit` tối đa 500 (chống tải nặng), nên dashboard dùng API này đã hiển thị sai thành 500 case dù DB có nhiều hơn.
+- Thêm `/api/cases/count`: đếm trực tiếp từ SQLite theo `uid` (admin: toàn bộ), trả `cases/messages/bad/warn/ok`; dashboard dùng endpoint này.
+
+## 12. Kết luận
 Hệ thống đã đáp ứng toàn bộ mã yêu cầu E1.1–E3.3, N1–N6, L1–L3 theo tiêu chuẩn đã chốt; mọi phát hiện đều truy được về chứng cứ gốc và được ký SHA-256 gắn phiên người dùng. Không có kết nối mạng trong toàn bộ luồng phân tích và xuất báo cáo.
