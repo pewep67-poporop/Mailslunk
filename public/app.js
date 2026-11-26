@@ -233,7 +233,7 @@ vi: {
   dateLabel: 'Ngày', messageIdLabel: 'Message-ID', authLabel: 'Xác thực',
   reportFailed: 'Tạo báo cáo thất bại: ', graphFailed: 'Tạo sơ đồ thất bại: ', fileLevel: 'Mức tệp', importedTarget: 'Nhập vào',
   historyH: 'Lịch sử điều tra', historySearchPh: 'tệp, chuyên viên hoặc mã vụ việc', historySearch: 'Tìm', refresh: 'Làm mới',
-  historyHint: '100 vụ việc gần nhất. Mở một vụ để khôi phục kết quả.', historyEmpty: 'Chưa có vụ việc.', historyOpen: 'Mở',
+historyHint: 'Tat ca v? vi?c da phan tich (toi da 30000). M? v? d? kh?i ph?c k?t qu?.', historyEmpty: 'Chưa có vụ việc.', historyOpen: 'Mở',
   historyWhen: 'Ngày', historyFile: 'Tệp', historyAnalyst: 'Chuyên viên', historyMessages: 'Số thư', historyVerdict: 'Kết luận', historyScore: 'Điểm',
   guideH: 'Hướng dẫn sử dụng MailSleuth',
   guide1: 'Chọn Windows hoặc Linux ở dashboard để đặt nền tảng cho lần chạy tới; Tự nhận diện sẽ giữ giá trị tìm thấy trong tệp.',
