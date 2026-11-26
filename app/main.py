@@ -1317,16 +1317,43 @@ def _global_index():
     from .global_graph import load_index
     max_cases = int(os.getenv("GRAPH_MAX_CASES", "30000") or 30000)
     con = connect()
-    # Chỉ index N case gần nhất để giữ API nhanh; tăng GRAPH_MAX_CASES nếu cần.
-    rows = con.execute("SELECT id, result FROM cases WHERE json_valid(result) "
-                       "ORDER BY ts DESC LIMIT ?", (max_cases,)).fetchall()
+    # Dùng SQLite JSON1 để trích field cần thiết thay vì parse toàn bộ result JSON
+    # bằng Python — nhanh hơn rất nhiều với 30k case.
+    sql = """
+        SELECT c.id AS cid,
+               json_extract(c.result,'$.verdict') AS verdict,
+               json_extract(c.result,'$.score') AS score,
+               json_extract(me.value,'$.from') AS sender,
+               json_extract(me.value,'$.to') AS tos,
+               json_extract(me.value,'$.cc') AS ccs,
+               json_extract(me.value,'$.bcc') AS bccs,
+               json_extract(me.value,'$.date') AS date,
+               json_extract(me.value,'$.message_id') AS mid,
+               json_extract(me.value,'$.originIPs') AS ips
+        FROM cases c, json_each(c.result, '$.messages') me
+        WHERE json_valid(c.result)
+        ORDER BY c.ts DESC
+        LIMIT ?
+    """
+    rows = con.execute(sql, (max_cases,)).fetchall()
     con.close()
     parsed = []
     for r in rows:
-        try:
-            parsed.append({"id": r["id"], "result": json.loads(r["result"] or "{}")})
-        except Exception:
-            pass
+        def arr(key):
+            v = r[key]
+            if not v:
+                return []
+            try:
+                return json.loads(v) if isinstance(v, str) else list(v)
+            except Exception:
+                return []
+        parsed.append({"id": r["cid"], "result": {
+            "verdict": r["verdict"] or "", "score": r["score"],
+            "messages": [{"from": r["sender"] or "", "to": arr("tos"),
+                          "cc": arr("ccs"), "bcc": arr("bccs"),
+                          "date": r["date"] or "", "message_id": r["mid"] or "",
+                          "originIPs": arr("ips")}],
+            "urls": [], "attachments": []}})
     idx = load_index(parsed)
     _GLOBAL_CACHE["index"] = idx
     _GLOBAL_CACHE["ts"] = _t.time()
