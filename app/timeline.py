@@ -108,6 +108,31 @@ def build(result: dict) -> list:
     return events
 
 
+def rechain(events: list) -> list:
+    """Gán lại seq/delta_s/elapsed_s cho event CŨ (chưa có các trường này)."""
+    if not isinstance(events, list) or not events:
+        return events if isinstance(events, list) else []
+    events.sort(key=lambda e: (not e.get("ts"), e.get("ts") or "", e.get("msg_index", -1)))
+    prev, total = None, 0.0
+    for i, e in enumerate(events, 1):
+        e["seq"] = i
+        cur = _parse_stored(e.get("ts"))
+        if cur is None:
+            e.setdefault("delta_s", None)
+            e.setdefault("elapsed_s", None)
+            continue
+        if prev is not None:
+            d = (cur - prev).total_seconds()
+            e["delta_s"] = round(d, 3)
+            if d >= 0:
+                total += d
+        else:
+            e["delta_s"] = 0.0
+        e["elapsed_s"] = round(total, 3)
+        prev = cur
+    return events
+
+
 def chain_summary(events: list) -> dict:
     """Tóm tắt chuỗi thời gian (dùng cho UI/báo cáo)."""
     dated = [e for e in events if e.get("ts")]

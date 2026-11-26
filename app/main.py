@@ -248,6 +248,12 @@ def _load_case(case_id: str):
         result = json.loads(r["result"] or "{}")
     except Exception:
         result = {}
+    # Case cũ lưu trước khi có cơ chế chuỗi thời gian -> tính lại khi đọc.
+    try:
+        from .timeline import rechain
+        rechain(result.get("timeline_events") or [])
+    except Exception:
+        pass
     return dict(r), result
 
 
