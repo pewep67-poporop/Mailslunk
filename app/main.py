@@ -1315,7 +1315,7 @@ def _global_index():
     if _GLOBAL_CACHE["index"] is not None and _t.time() - _GLOBAL_CACHE["ts"] < 300:
         return _GLOBAL_CACHE["index"]
     from .global_graph import load_index
-    max_cases = int(os.getenv("GRAPH_MAX_CASES", "5000") or 5000)
+    max_cases = int(os.getenv("GRAPH_MAX_CASES", "30000") or 30000)
     con = connect()
     # Chỉ index N case gần nhất để giữ API nhanh; tăng GRAPH_MAX_CASES nếu cần.
     rows = con.execute("SELECT id, result FROM cases WHERE json_valid(result) "
@@ -1789,10 +1789,6 @@ async def admin_sessions(request: Request):
     rows = con.execute("SELECT * FROM session_signatures ORDER BY rowid DESC LIMIT 50").fetchall()
     con.close()
     return [dict(r) for r in rows]
-
-
-# legacy reputation settings: kept for API compatibility, off by default
-_REP_KEYS = ("abusech", "vt", "sb")
 
 
 

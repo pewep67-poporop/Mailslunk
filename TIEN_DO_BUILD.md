@@ -76,4 +76,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 
 - 2026-11-27: Relations bổ sung /api/graph/index (Message-ID/From/To, phân trang, lọc actor/domain/ip/verdict/case) + bảng thư & nhóm đối tượng trên UI; test_graph_index 2/2 OK.
 
+- 2026-11-27: nâng GRAPH_MAX_CASES 5000→30000; dọn _REP_KEYS + tool ML cũ + comment thừa; rà soát xuất báo cáo/trích xuất/dữ liệu.
+
 **Next action:** deploy HEAD (`df33e9d` + bản đếm) lên server; kiểm tra dashboard hiện số case thật và report HTML/PDF/CSV.

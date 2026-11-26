@@ -4,10 +4,8 @@ Walks MIME parts of the raw evidence (EML/MBOX, basic .msg support), hashes ever
 attachment, compares declared MIME against magic bytes, measures entropy, checks
 archives (zip bomb / nesting), Office VBA macros (oletools), PDF active content,
 double extensions and the EICAR test string. Findings ids are prefixed A-.
-Threat/content scan (local, offline-safe): heuristics + optional yara-python/local
-YARA rules + optional local external tools (YARA CLI, ClamAV, sandbox endpoint)
-with strict time/size limits. Reputation (VT hash-lookup / MalwareBazaar) is
-stubbed for the key-management phase.
+Nội dung được quét bằng rule/fact local (analysis/rules + thư viện Python),
+không reputation, không tool ngoài, không mạng.
 """
 import io, re, math, hashlib, zipfile
 from email import policy
@@ -26,7 +24,6 @@ MEDIA_DECL = ("image/", "audio/", "video/")
 MAX_ATT = 200
 MAX_INLINE = 25 * 1024 * 1024
 
-# Offline/local content scan (heuristics + optional yara-python/CLI/ClamAV/sandbox)
 THREAT_SCAN = None
 try:
     from . import threatscan as THREAT_SCAN
@@ -164,7 +161,7 @@ def extract(name: str, raw: bytes, quarantine: bool = True, user: str = "") -> l
              "magic": magic, "entropy": round(entropy(data), 2), "sha256": sha,
              "md5": hashlib.md5(data).hexdigest(), "sha1": hashlib.sha1(data).hexdigest(),
              "verdict": verdict, "reasons": reasons, "weight": weight, "sev": sev}
-        # Offline/local threat scan (heuristics + optional YARA/ClamAV/sandbox)
+        # Quét nội dung local (rule/fact + thư viện)
         scan = {"findings": [], "matches": [], "engines": []}
         if THREAT_SCAN is not None:
             try:
