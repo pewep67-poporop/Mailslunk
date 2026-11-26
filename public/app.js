@@ -60,7 +60,7 @@ en: {
   runCancelled: 'Cancelled — this run was discarded.', runStoppedNoResults: 'Stopped before any result was produced.',
   batchTimeout: 'The request timed out.', stepValidate: 'Validating files', stepUpload: 'Uploading', stepProcess: 'Analyzing',
   stepScore: 'Score', pickFiles: 'files', pickNone: 'No files selected.', pickSkipped: 'skipped', pickDup: 'duplicates',
-  pickLimit: 'Too many files (max 2000).', pickRemove: 'Remove', pfReady: 'ready', pfRejected: 'rejected by preflight',
+  pickLimit: 'Too many files (max 30000).', pickRemove: 'Remove', pfReady: 'ready', pfRejected: 'rejected by preflight', pickMore: 'more',
   pfBadExt: 'unsupported extension', pfEmpty: 'empty file', pfTooLarge: 'file too large', pfDupe: 'duplicate',
   noFile: 'Choose at least one file.', uploadErrors: 'Some files could not be analyzed',
   analysisControls: 'Analysis controls', liveTitle: 'Analysis', liveFile: 'File', liveStage: 'Stage', liveDetail: 'Detail',
@@ -200,7 +200,7 @@ vi: {
   runCancelled: 'Đã hủy — toàn bộ kết quả lần này bị bỏ.', runStoppedNoResults: 'Đã dừng trước khi có kết quả.',
   batchTimeout: 'Yêu cầu quá thời gian.', stepValidate: 'Kiểm tra tệp', stepUpload: 'Tải lên', stepProcess: 'Phân tích',
   stepScore: 'Điểm', pickFiles: 'tệp', pickNone: 'Chưa chọn tệp.', pickSkipped: 'bị bỏ', pickDup: 'trùng',
-  pickLimit: 'Quá nhiều tệp (tối đa 2000).', pickRemove: 'Xóa', pfReady: 'sẵn sàng', pfRejected: 'bị loại từ đầu',
+  pickLimit: 'Quá nhiều tệp (tối đa 30000).', pickRemove: 'Xóa', pfReady: 'sẵn sàng', pfRejected: 'bị loại từ đầu', pickMore: 'more',
   pfBadExt: 'phần mở rộng không hỗ trợ', pfEmpty: 'tệp rỗng', pfTooLarge: 'tệp quá lớn', pfDupe: 'trùng',
   noFile: 'Hãy chọn ít nhất một tệp.', uploadErrors: 'Một số tệp không phân tích được',
   analysisControls: 'Điều khiển phân tích', liveTitle: 'Phân tích', liveFile: 'Tệp', liveStage: 'Bước', liveDetail: 'Chi tiết',
@@ -739,7 +739,7 @@ let currentIdx = 0;
 
 const OK_EXT = /\.(eml|emlx|mht|mhtml|msg|mbox|mbx|txt)$/i;
 const PICK_FILE_MAX = 80 * 1024 * 1024;
-const PICK_TOTAL_MAX = 2000;
+const PICK_TOTAL_MAX = 30000;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const sleepAbortable = (ms, signal) => new Promise((resolve, reject) => {
   if (signal.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
@@ -787,10 +787,11 @@ function renderPick() {
   if (picked.length > PICK_TOTAL_MAX) msg += ` · ${t('pickLimit')}`;
   if (picked.length && !pfRejected.length) msg += ` · ✓ ${t('pfReady')}`;
   $('pickMsg').textContent = msg;
-  picked.forEach((x, i) => {
+  const shown = picked.slice(0, 200);
+  shown.forEach((x, i) => {
     const li = el('li', 'filerow');
     li.append(el('span', 'fname', x.path), el('span', 'fsize', fSize(x.f.size)));
-    const rm = el('button', 'ghost', '×');
+    const rm = el('button', 'ghost', 'x');
     rm.type = 'button';
     rm.title = t('pickRemove');
     rm.setAttribute('aria-label', t('pickRemove') + ': ' + x.path);
@@ -798,6 +799,9 @@ function renderPick() {
     li.append(rm);
     list.append(li);
   });
+  if (picked.length > shown.length) {
+    list.append(el('li', 'hint', `... ${picked.length - shown.length} more`));
+  }
   const pf = $('preflight');
   if (pf) {
     const pl = $('pfList');

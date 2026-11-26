@@ -1353,6 +1353,302 @@ async def forensic_post(case_id: str, kind: str, request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Report & Administration (khôi phục từ baseline 5be0e15)
+# ---------------------------------------------------------------------------
+@app.get("/api/report/{case_id}/verify")
+async def report_verify(case_id: str, request: Request):
+    s = require_auth(request)
+    row, result = _case_for(s, case_id)
+    expected = row.get("sig") or case_signature(row, result)
+    actual = case_signature(row, result)
+    return {"caseId": case_id, "expected": expected, "actual": actual,
+            "match": secrets.compare_digest(str(expected), str(actual)),
+            "algorithm": "SHA-256"}
+
+
+@app.get("/api/report/{case_id}.csv")
+async def report_csv_short(case_id: str, request: Request, lang: str = "en", kind: str = "summary"):
+    s = require_auth(request)
+    row, result = _case_for(s, case_id)
+    data = render_csv(row, result, lang=lang, kind=kind)
+    return PlainTextResponse(data, media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}-{_safe_name(kind)}.csv"'})
+
+
+@app.get("/api/report/{case_id}.pdf")
+async def report_pdf_short(case_id: str, request: Request, lang: str = "en"):
+    s = require_auth(request)
+    row, result = _case_for(s, case_id)
+    _, blob, _ = _report_parts(row, result, lang)
+    try:
+        pdf = render_pdf(row, result, lang=lang, sig=row.get("sig") or "", map_png=blob)
+    except Exception as e:
+        return JSONResponse({"error": "pdf_failed", "detail": type(e).__name__}, status_code=500)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}.pdf"'})
+
+
+@app.get("/api/report/{case_id}")
+async def report(case_id: str, request: Request, lang: str = "en", format: str = "",
+                 kind: str = "summary", download: int = 0):
+    s = require_auth(request)
+    row, result = _case_for(s, case_id)
+    fmt = (format or "").lower()
+    if fmt == "json":
+        result.setdefault("custody", {})
+        result["custody"].setdefault("caseId", row["id"])
+        result["caseMeta"] = {"id": row["id"], "ts": row["ts"], "user": row["user"],
+                              "file": row["file"], "sha256": row["sha256"],
+                              "signature": row.get("sig"), "platform": row.get("platform")}
+        return JSONResponse(result)
+    if fmt == "csv":
+        data = render_csv(row, result, lang=lang, kind=kind)
+        return PlainTextResponse(data, media_type="text/csv; charset=utf-8",
+                                 headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}-{_safe_name(kind)}.csv"'})
+    b64, blob, _ = _report_parts(row, result, lang)
+    if fmt == "pdf":
+        try:
+            pdf = render_pdf(row, result, lang=lang, sig=row.get("sig") or "", map_png=blob)
+        except Exception as e:
+            return JSONResponse({"error": "pdf_failed", "detail": type(e).__name__}, status_code=500)
+        return Response(content=pdf, media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="{_safe_name(case_id)}.pdf"'})
+    html = render_report(row, result, lang=lang, integrity=True, map_base64=b64,
+                         sig=row.get("sig") or "")
+    headers = {
+        "Content-Disposition": f'inline; filename="{_safe_name(case_id)}.html"',
+        # Defence in depth: report content is escaped, but email evidence is
+        # untrusted input. Never allow scripts, frames or remote fetches.
+        "Content-Security-Policy": ("default-src 'none'; img-src data:; "
+                                    "style-src 'unsafe-inline'; font-src data:; "
+                                    "base-uri 'none'; form-action 'none'; "
+                                    "frame-ancestors 'none'"),
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "Cache-Control": "no-store",
+    }
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="{_safe_name(case_id)}.html"'
+    return HTMLResponse(html, headers=headers)
+
+
+# ---------------------------------------------------------------------------
+# admin
+# ---------------------------------------------------------------------------
+def _public_user(r) -> dict:
+    return {"uid": r["uid"], "user": r["name"], "role": r["role"],
+            "phone": (r["phone"] or ""), "created": r["created"],
+            "lastLogin": r["last_login"], "disabled": bool(int(r["disabled"] or 0)),
+            "hasRecovery": bool(r["recovery"]), "adminEnrolled": bool(r["admin_kdf"])}
+
+
+@app.get("/api/admin/users")
+async def admin_users(request: Request):
+    require_admin(request)
+    con = connect()
+    rows = con.execute("SELECT * FROM users ORDER BY id").fetchall()
+    con.close()
+    return {"users": [_public_user(r) for r in rows]}
+
+
+@app.post("/api/admin/users")
+async def admin_create_user(request: Request):
+    admin = require_admin(request)
+    b = await request.json()
+    name = str(b.get("user") or "").strip()
+    pw = str(b.get("pass") or "")
+    role = str(b.get("role") or "analyst").lower()
+    phone = A.norm_phone(str(b.get("phone") or ""))
+    if not A.username_ok(name):
+        return JSONResponse({"error": "bad_user"}, status_code=400)
+    if not A.password_ok(pw):
+        return JSONResponse({"error": "weak"}, status_code=400)
+    if role not in ("analyst", "admin"):
+        return JSONResponse({"error": "bad_role"}, status_code=400)
+    if phone and not A.phone_ok(phone):
+        return JSONResponse({"error": "bad_phone"}, status_code=400)
+    if A.find_user_by_login(name):
+        return JSONResponse({"error": "exists"}, status_code=400)
+    uid = A.new_uid()
+    con = connect()
+    if role == "admin":
+        cccd = str(b.get("cccd") or "")
+        try:
+            blob, key = A.admin_blob(name, pw, cccd)
+        except ValueError as e:
+            con.close()
+            return JSONResponse({"error": "bad_cccd" if "CCCD" in str(e) else "weak"}, status_code=400)
+        h = bcrypt.hashpw(secrets.token_hex(32).encode(), bcrypt.gensalt(rounds=12)).decode()
+        con.execute("INSERT INTO users(name,hash,role,created,uid,phone,admin_kdf) VALUES(?,?,?,?,?,?,?)",
+                    (name, h, "admin", now_iso(), uid, phone or None, json.dumps(blob)))
+        out = {"user": name, "uid": uid, "role": "admin", "key": key,
+               "note": "Store this recovery key offline. Login uses the password."}
+    else:
+        h = bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode()
+        con.execute("INSERT INTO users(name,hash,role,created,uid,phone) VALUES(?,?,?,?,?,?)",
+                    (name, h, "analyst", now_iso(), uid, phone or None))
+        row = con.execute("SELECT id FROM users WHERE uid=?", (uid,)).fetchone()
+        con.commit()
+        con.close()
+        key = A.set_recovery(row["id"])
+        out = {"user": name, "uid": uid, "role": "analyst", "recovery": key}
+        log(admin["user"], "admin_create_user", f"{name} uid={uid} role=analyst")
+        return out
+    con.commit()
+    con.close()
+    log(admin["user"], "admin_create_user", f"{name} uid={uid} role=admin")
+    return out
+
+
+@app.post("/api/admin/users/{uid}/rename-token")
+async def admin_rename_token(uid: str, request: Request):
+    admin = require_admin(request)
+    target = _user_by_uid(uid)
+    if not target:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    token = secrets.token_hex(16)
+    exp = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    con = connect()
+    con.execute("UPDATE users SET rename_token=?, rename_exp=? WHERE id=?",
+                (hashlib.sha256(token.encode()).hexdigest(), exp, target["id"]))
+    con.commit()
+    con.close()
+    log(admin["user"], "admin_rename_token", f"uid={uid}")
+    return {"uid": uid, "token": token, "expires": exp}
+
+
+@app.post("/api/admin/users/{uid}/reset")
+async def admin_reset_user(uid: str, request: Request):
+    admin = require_admin(request)
+    target = _user_by_uid(uid)
+    if not target:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    b = await request.json()
+    newp = str(b.get("pass") or "")
+    if not A.password_ok(newp):
+        return JSONResponse({"error": "weak"}, status_code=400)
+    con = connect()
+    recovery = None
+    if (target["role"] or "") == "admin" and target["admin_kdf"]:
+        try:
+            blob = A.admin_rekey(json.loads(target["admin_kdf"]), newp)
+            con.execute("UPDATE users SET admin_kdf=? WHERE id=?", (json.dumps(blob), target["id"]))
+        except Exception:
+            con.close()
+            return JSONResponse({"error": "weak"}, status_code=400)
+    else:
+        h = bcrypt.hashpw(newp.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode()
+        con.execute("UPDATE users SET hash=? WHERE id=?", (h, target["id"]))
+        con.commit()
+        con.close()
+        recovery = A.set_recovery(target["id"])
+        con = None
+    if con is not None:
+        con.commit()
+        con.close()
+    A.drop_all_sessions(target["name"])
+    log(admin["user"], "admin_reset_user", f"uid={uid}")
+    return {"ok": True, "recovery": recovery}
+
+
+@app.post("/api/admin/users/{uid}/disable")
+async def admin_disable_user(uid: str, request: Request):
+    admin = require_admin(request)
+    if uid == admin.get("uid"):
+        return JSONResponse({"error": "self_forbidden"}, status_code=400)
+    target = _user_by_uid(uid)
+    if not target:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    b = await request.json()
+    disabled = 1 if b.get("disabled") else 0
+    if disabled and (target["role"] or "") == "admin":
+        con = connect()
+        n = con.execute("SELECT COUNT(*) AS n FROM users WHERE role='admin' AND COALESCE(disabled,0)=0 AND id<>?",
+                        (target["id"],)).fetchone()["n"]
+        con.close()
+        if n < 1:
+            return JSONResponse({"error": "last_admin"}, status_code=400)
+    con = connect()
+    con.execute("UPDATE users SET disabled=? WHERE id=?", (disabled, target["id"]))
+    con.commit()
+    con.close()
+    if disabled:
+        A.drop_all_sessions(target["name"])
+    log(admin["user"], "admin_disable_user", f"uid={uid} disabled={disabled}")
+    return {"ok": True, "disabled": bool(disabled)}
+
+
+@app.post("/api/admin/users/{uid}/role")
+async def admin_set_role(uid: str, request: Request):
+    admin = require_admin(request)
+    if uid == admin.get("uid"):
+        return JSONResponse({"error": "self_forbidden"}, status_code=400)
+    target = _user_by_uid(uid)
+    if not target:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    b = await request.json()
+    role = str(b.get("role") or "").lower()
+    if role not in ("analyst", "admin"):
+        return JSONResponse({"error": "bad_role"}, status_code=400)
+    if (target["role"] or "") == "admin" and role != "admin":
+        con = connect()
+        n = con.execute("SELECT COUNT(*) AS n FROM users WHERE role='admin' AND COALESCE(disabled,0)=0 AND id<>?",
+                        (target["id"],)).fetchone()["n"]
+        con.close()
+        if n < 1:
+            return JSONResponse({"error": "last_admin"}, status_code=400)
+    con = connect()
+    con.execute("UPDATE users SET role=? WHERE id=?", (role, target["id"]))
+    con.commit()
+    con.close()
+    A.drop_all_sessions(target["name"])
+    log(admin["user"], "admin_set_role", f"uid={uid} role={role}")
+    return {"ok": True, "role": role}
+
+
+@app.get("/api/admin/stats")
+async def admin_stats(request: Request):
+    require_admin(request)
+    con = connect()
+    users = con.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+    admins = con.execute("SELECT COUNT(*) AS n FROM users WHERE role='admin'").fetchone()["n"]
+    cases_n = con.execute("SELECT COUNT(*) AS n FROM cases").fetchone()["n"]
+    imports = con.execute("SELECT COUNT(*) AS n FROM url_imports").fetchone()["n"]
+    con.close()
+    ev = data_dir() / "evidence"
+    try:
+        size = sum(p.stat().st_size for p in ev.glob("*") if p.is_file())
+    except Exception:
+        size = 0
+    return {"users": users, "admins": admins, "cases": cases_n,
+            "urlImports": imports, "evidenceBytes": size,
+            "offline": not LIVE_DNS, "map": "local-schematic"}
+
+
+@app.get("/api/admin/logs")
+async def admin_logs(request: Request):
+    require_admin(request)
+    con = connect()
+    rows = con.execute("SELECT * FROM audit ORDER BY id DESC LIMIT 300").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/admin/sessions")
+async def admin_sessions(request: Request):
+    require_admin(request)
+    con = connect()
+    rows = con.execute("SELECT * FROM session_signatures ORDER BY rowid DESC LIMIT 50").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+# legacy reputation settings: kept for API compatibility, off by default
+_REP_KEYS = ("abusech", "vt", "sb")
+
+
+
+# ---------------------------------------------------------------------------
 # static UI
 # ---------------------------------------------------------------------------
 if APP_PUBLIC.exists():

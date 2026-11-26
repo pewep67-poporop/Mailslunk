@@ -60,6 +60,8 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 - 2026-11-26: P1-P10 hoàn tất. Tổng 31/31 unit test PASS; py_compile + node --check OK.
 - 2026-11-26: `BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md` đã tạo; docs cập nhật.
 - 2026-11-26: rà soát hướng dẫn + `KIEN_TRUC_HE_THONG.md`; Linux run/systemd; Python 3.14 notes.
-- 2026-11-26: fix rate analyze streaming: limit 80→1200 (`RATE_ANALYZE_STREAM`), `Retry-After:60`, client tự retry 429; docs/.env cập nhật; py_compile + node --check OK.
+- 2026-11-26: fix rate analyze streaming: limit 80→1200 (`RATE_ANALYZE_STREAM`), `Retry-After:60`, client tự retry 429; docs/.env cập nhật.
+- 2026-11-26: **fix regression** — GATE 0.5 đã xóa nhầm endpoint `/api/report/*` và `/api/admin/*`; khôi phục từ `5be0e15`; nâng `PICK_TOTAL_MAX` 2000→30000 và render list tối đa 200 dòng.
+- 2026-11-26: kiểm tra thực tế server `192.168.65.131:8000` với dataset `extracted_mail` (15029 file): server đang chạy code cũ/trung gian (`PICK_TOTAL_MAX=2000`, rate 80, report/admin 404); đã ghi nhận.
 
-**Next action:** commit/push fix rate; không còn phase nào trong checklist.
+**Next action:** commit/push; yêu cầu deploy HEAD lên server rồi test lại.

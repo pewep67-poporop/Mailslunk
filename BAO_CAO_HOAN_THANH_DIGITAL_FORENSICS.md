@@ -87,5 +87,10 @@ python tools/autopsy_handoff.py <case_id> ./autopsy_<case_id>
 ## 8. Tài liệu kiến trúc mới
 `KIEN_TRUC_HE_THONG.md` — 8 sơ đồ Mermaid + giải thích chi tiết: thành phần tổng thể, luồng phân tích, schema 8 bảng pháp chứng, graph quan hệ, SPF/DKIM/DMARC/DNS offline, báo cáo & chữ ký, ranh giới bàn giao Autopsy/tool local, bản đồ tập tin và giới hạn. `HUONG_DAN_SETUP_PYTHON.md` đã rà soát lại (bỏ mọi tham chiếu `LIVE_DNS=1`, Local AI, SIEM).
 
-## 9. Kết luận
+## 9. Sự cố phát hiện khi kiểm tra server thực (192.168.65.131)
+- Server đang chạy **code cũ/trung gian**: `PICK_TOTAL_MAX=2000`, rate stream 80/phút, `app.js` không có retry 429, `/api/report/*` và `/api/admin/*` trả 404 (bị xóa nhầm ở GATE 0.5).
+- Dataset `extracted_mail` có **15.029 file .eml / 394,1 MB**; UI cũ chặn ở 2000 file → import không đủ. Lịch sử chỉ có 80 case, dừng quanh file 146/147 do rate 80.
+- Đã sửa trong repo: khôi phục report/admin, nâng giới hạn 30.000 file, render danh sách tối đa 200 dòng, rate 1200 + Retry-After + client retry. **Cần deploy HEAD lên server và restart** thì mới có hiệu lực.
+
+## 10. Kết luận
 Hệ thống đã đáp ứng toàn bộ mã yêu cầu E1.1–E3.3, N1–N6, L1–L3 theo tiêu chuẩn đã chốt; mọi phát hiện đều truy được về chứng cứ gốc và được ký SHA-256 gắn phiên người dùng. Không có kết nối mạng trong toàn bộ luồng phân tích và xuất báo cáo.
