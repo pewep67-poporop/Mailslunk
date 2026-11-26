@@ -90,6 +90,32 @@ CREATE TABLE IF NOT EXISTS sessions(sid TEXT PRIMARY KEY, user TEXT, role TEXT, 
 CREATE TABLE IF NOT EXISTS url_imports(
   id TEXT PRIMARY KEY, ts TEXT, user TEXT, case_id TEXT, source TEXT,
   sha256 TEXT, summary TEXT, entries TEXT);
+CREATE TABLE IF NOT EXISTS case_meta(
+  case_id TEXT PRIMARY KEY, uid TEXT, objective TEXT, scope TEXT,
+  source TEXT, collector TEXT, collected_at TEXT, notes TEXT);
+CREATE TABLE IF NOT EXISTS evidence_inventory(
+  id INTEGER PRIMARY KEY, case_id TEXT, uid TEXT, msg_index INTEGER,
+  role TEXT, name TEXT, sha256 TEXT, size INTEGER,
+  source_path TEXT, source_field TEXT, acquired_at TEXT, custodian TEXT, note TEXT);
+CREATE TABLE IF NOT EXISTS custody_events(
+  id INTEGER PRIMARY KEY, case_id TEXT, uid TEXT, ts TEXT, actor TEXT,
+  action TEXT, source TEXT, transfer_from TEXT, transfer_to TEXT,
+  hash_before TEXT, hash_after TEXT, note TEXT);
+CREATE TABLE IF NOT EXISTS timeline_events(
+  id INTEGER PRIMARY KEY, case_id TEXT, uid TEXT, ts TEXT, msg_index INTEGER,
+  source_field TEXT, event TEXT, confidence TEXT, note TEXT);
+CREATE TABLE IF NOT EXISTS assessments(
+  id INTEGER PRIMARY KEY, case_id TEXT, uid TEXT, kind TEXT, claim TEXT,
+  evidence_refs TEXT, limitation TEXT, created TEXT);
+CREATE TABLE IF NOT EXISTS response_actions(
+  id INTEGER PRIMARY KEY, case_id TEXT, uid TEXT, action TEXT,
+  rationale TEXT, kind TEXT, created TEXT);
+CREATE TABLE IF NOT EXISTS screenshots(
+  id INTEGER PRIMARY KEY, case_id TEXT, uid TEXT, path TEXT, tool TEXT,
+  step TEXT, caption TEXT, ts TEXT);
+CREATE TABLE IF NOT EXISTS team_assignment(
+  id INTEGER PRIMARY KEY, case_id TEXT, uid TEXT, member TEXT,
+  role TEXT, tasks TEXT);
 """)
     # users: hex32 public id, phone login, admin KDF, one-time rename token
     for name, decl in [

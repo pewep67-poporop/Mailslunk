@@ -1270,6 +1270,86 @@ async def map_post(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Forensic case data (P6) - mọi ghi re-sign SHA-256 theo phiên
+# ---------------------------------------------------------------------------
+_FORENSIC_TABLES = {
+    "meta": ("case_meta", {"objective", "scope", "source", "collector", "collected_at", "notes"}),
+    "inventory": ("evidence_inventory", {"msg_index", "role", "name", "sha256", "size",
+                                         "source_path", "source_field", "acquired_at",
+                                         "custodian", "note"}),
+    "custody": ("custody_events", {"ts", "actor", "action", "source", "transfer_from",
+                                   "transfer_to", "hash_before", "hash_after", "note"}),
+    "timeline": ("timeline_events", {"ts", "msg_index", "source_field", "event",
+                                     "confidence", "note"}),
+    "assessments": ("assessments", {"kind", "claim", "evidence_refs", "limitation"}),
+    "responses": ("response_actions", {"action", "rationale", "kind"}),
+    "screenshots": ("screenshots", {"path", "tool", "step", "caption", "ts"}),
+    "team": ("team_assignment", {"member", "role", "tasks"}),
+}
+
+
+def _resign_case(s: dict, case_id: str, result: dict) -> dict:
+    result["session_fingerprint"] = hashlib.sha256(str(s.get("sid") or "").encode()).hexdigest()
+    result["signed_at"] = now_iso()
+    con = connect()
+    row = con.execute("SELECT * FROM cases WHERE id=?", (case_id,)).fetchone()
+    sig = case_signature(dict(row), result)
+    con.execute("UPDATE cases SET result=?, sig=? WHERE id=? AND uid=?",
+                (json.dumps(result, ensure_ascii=False), sig, case_id, s.get("uid", "")))
+    con.commit()
+    con.close()
+    result["signature"] = {"sha256": sig, "at": result["signed_at"], "alg": "SHA-256"}
+    return result
+
+
+@app.get("/api/case/{case_id}/forensic/{kind}")
+async def forensic_get(case_id: str, kind: str, request: Request):
+    s = require_auth(request)
+    _case_for(s, case_id)  # kiểm tra ownership
+    if kind not in _FORENSIC_TABLES:
+        return JSONResponse({"error": "bad_kind"}, status_code=400)
+    table = _FORENSIC_TABLES[kind][0]
+    con = connect()
+    if kind == "meta":
+        rows = con.execute(f"SELECT * FROM {table} WHERE case_id=?", (case_id,)).fetchall()
+        out = dict(rows[0]) if rows else {}
+    else:
+        rows = con.execute(f"SELECT * FROM {table} WHERE case_id=? ORDER BY id", (case_id,)).fetchall()
+        out = [dict(r) for r in rows]
+    con.close()
+    return {"caseId": case_id, "kind": kind, "data": out}
+
+
+@app.post("/api/case/{case_id}/forensic/{kind}")
+async def forensic_post(case_id: str, kind: str, request: Request):
+    s = require_auth(request)
+    row, result = _case_for(s, case_id)
+    if kind not in _FORENSIC_TABLES:
+        return JSONResponse({"error": "bad_kind"}, status_code=400)
+    table, fields = _FORENSIC_TABLES[kind]
+    b = dict(await request.json() or {})
+    clean = {k: b.get(k) for k in fields if k in b}
+    con = connect()
+    if kind == "meta":
+        cols = ["case_id", "uid"] + list(clean)
+        vals = [case_id, s.get("uid", "")] + [clean[k] for k in clean]
+        con.execute(f"INSERT OR REPLACE INTO {table}({','.join(cols)}) "
+                    f"VALUES({','.join('?' for _ in cols)})", vals)
+    else:
+        clean = {k: v for k, v in clean.items() if v not in (None, "")}
+        clean["case_id"] = case_id
+        clean["uid"] = s.get("uid", "")
+        cols = list(clean)
+        con.execute(f"INSERT INTO {table}({','.join(cols)}) "
+                    f"VALUES({','.join('?' for _ in cols)})", [clean[k] for k in cols])
+    con.commit()
+    con.close()
+    log(s["user"], f"forensic_{kind}", case_id)
+    _resign_case(s, case_id, result)
+    return {"ok": True, "caseId": case_id, "kind": kind}
+
+
+# ---------------------------------------------------------------------------
 # static UI
 # ---------------------------------------------------------------------------
 if APP_PUBLIC.exists():

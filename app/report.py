@@ -64,6 +64,8 @@ def case_signature(row: dict, result: dict) -> str:
         "caseId": row.get("id") or (result.get("custody") or {}).get("caseId"),
         "ts": row.get("ts"), "user": row.get("user"), "file": row.get("file"),
         "sha256": row.get("sha256") or (result.get("custody") or {}).get("sha256"),
+        "session_fp": result.get("session_fingerprint") or "",
+        "signed_at": result.get("signed_at") or "",
         "format": result.get("format"), "count": result.get("count"),
         "score": result.get("score"), "verdict": result.get("verdict"),
         "findings": findings,
