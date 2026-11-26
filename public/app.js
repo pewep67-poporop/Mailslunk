@@ -1704,18 +1704,29 @@ async function renderCasePane() {
 function renderTimeline(out, r) {
   const vi = lang === 'vi';
   const events = r.timeline_events || [];
-  out.append(el('h4', '', vi ? 'Timeline từ dữ liệu email (Date / Received)' : 'Timeline from email data (Date / Received)'));
+  out.append(el('h4', '', vi
+    ? 'Chuỗi mốc thời gian từ dữ liệu email (Date / Received) - UTC'
+    : 'Chronological chain from email data (Date / Received) - UTC'));
   if (!events.length) { out.append(el('p', 'hint', t('noResult'))); return; }
+  const dated = events.filter(e => e.ts);
+  if (dated.length) {
+    out.append(el('p', 'summary', vi
+      ? `Bat dau ${dated[0].ts} → Ket thuc ${dated[dated.length-1].ts} · ${dated.length} moc · tong ${dated[dated.length-1].elapsed_s ?? 0}s · chua xac minh ${events.length-dated.length}`
+      : `Start ${dated[0].ts} → End ${dated[dated.length-1].ts} · ${dated.length} events · span ${dated[dated.length-1].elapsed_s ?? 0}s · unverified ${events.length-dated.length}`));
+  }
   const table = el('table');
   const thead = el('thead'); const hr = el('tr');
-  for (const k of ['ts', 'source_field', 'msg_index', 'event', 'confidence']) hr.append(el('th', '', k));
+  for (const k of ['seq', 'ts', 'delta_s', 'elapsed_s', 'source_field', 'msg_index', 'event', 'geo', 'confidence']) hr.append(el('th', '', k));
   thead.append(hr); table.append(thead);
   const tb = el('tbody');
   for (const e of events) {
     const tr = el('tr');
-    for (const k of ['ts', 'source_field', 'msg_index', 'event', 'confidence']) {
+    for (const k of ['seq', 'ts', 'delta_s', 'elapsed_s', 'source_field', 'msg_index', 'event', 'geo', 'confidence']) {
       let v = e[k] ?? '';
       if (k === 'msg_index' && typeof v === 'number') v = v + 1;
+      if (k === 'geo' && v && typeof v === 'object') {
+        v = [v.city, v.country, v.asn ? 'AS'+v.asn : '', (v.lat!=null && v.lon!=null) ? `${v.lat},${v.lon}` : ''].filter(Boolean).join(' / ');
+      }
       tr.append(el('td', '', String(v)));
     }
     tb.append(tr);

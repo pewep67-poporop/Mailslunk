@@ -32,6 +32,17 @@ class TimelineTest(unittest.TestCase):
         self.assertTrue(any(e["source_field"] == "Received" for e in events))
         self.assertTrue(all(e["confidence"] in ("observed", "unverified") for e in events))
 
+    def test_chain(self):
+        RESULT["timeline_events"] = build(RESULT)
+        from app.timeline import chain_summary
+        s = chain_summary(RESULT["timeline_events"])
+        self.assertEqual(s["events"], 2)
+        self.assertTrue(s["start"])
+        ev = RESULT["timeline_events"][0]
+        self.assertEqual(ev["seq"], 1)
+        self.assertIn("delta_s", ev)
+        self.assertIn("elapsed_s", ev)
+
     def test_report_shows_past_date(self):
         RESULT["timeline_events"] = build(RESULT)
         html = render_report(ROW, RESULT, lang="en")
