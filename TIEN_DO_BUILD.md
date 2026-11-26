@@ -64,5 +64,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 - 2026-11-26: **fix regression** — GATE 0.5 đã xóa nhầm endpoint `/api/report/*` và `/api/admin/*`; khôi phục từ `5be0e15`; nâng `PICK_TOTAL_MAX` 2000→30000 và render list tối đa 200 dòng.
 - 2026-11-26: kiểm tra thực tế server `192.168.65.131:8000` với dataset `extracted_mail` (15029 file): server đang chạy code cũ/trung gian (`PICK_TOTAL_MAX=2000`, rate 80, report/admin 404); đã ghi nhận.
 - 2026-11-26: thêm `app/timeline.py` — tự ghi mốc quá khứ từ `Date` + `Received` vào `result.timeline_events`; API forensic/timeline fallback; sub-tab Results/Timeline; báo cáo dùng event tự sinh. `tests/test_timeline.py` 2/2 OK.
+- 2026-11-26: test server sau lô 500 case — mọi luồng OK trừ `/api/report/*` vẫn 500 do server chưa pull `df33e9d` (khôi phục `_report_parts`).
 
-**Next action:** commit/push; deploy HEAD lên server rồi test lại.
+**Next action:** deploy `df33e9d` lên server, test lại report HTML/PDF/CSV.
