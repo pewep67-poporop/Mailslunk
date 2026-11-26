@@ -1352,6 +1352,38 @@ async def global_graph(request: Request, focus: str = "", limit: int = 200, csv_
                                   "ips": len(idx["ips"])}}
 
 
+@app.get("/api/graph/index")
+async def global_index(request: Request, q: str = "", kind: str = "",
+                       offset: int = 0, limit: int = 50):
+    """Bảng thư đầy đủ (Message-ID/From/To) + phân loại theo nhóm đối tượng."""
+    require_auth(request)
+    idx = _global_index()
+    rows = idx["messages"]
+    if kind:
+        if kind == "actor":
+            rows = [m for m in rows if m["from"] == q or q in m["to"]]
+        elif kind == "domain":
+            rows = [m for m in rows if q in m["from"] or any(q in a for a in m["to"])]
+        elif kind == "ip":
+            rows = [m for m in rows if q in m["origin_ips"]]
+        elif kind == "verdict":
+            rows = [m for m in rows if m["verdict"] == q]
+        elif kind == "case":
+            rows = [m for m in rows if m["case_id"] == q]
+    if q and kind not in ("actor", "domain", "ip", "case"):
+        low = q.lower()
+        rows = [m for m in rows if any(low in str(m.get(k) or "").lower()
+                for k in ("id", "message_id", "subject", "from", "date"))]
+    total = len(rows)
+    off = max(0, int(offset or 0))
+    lim = max(1, min(int(limit or 50), 200))
+    items = rows[off:off + lim]
+    groups = {"actors": len(idx["actors"]), "domains": len(idx["domains"]),
+              "ips": len(idx["ips"]), "urls": len(idx["urls"]),
+              "attachments": len(idx["hashes"]), "messages": len(idx["messages"])}
+    return {"total": total, "offset": off, "limit": lim, "items": items, "groups": groups}
+
+
 # ---------------------------------------------------------------------------
 # Forensic case data (P6) - mọi ghi re-sign SHA-256 theo phiên
 # ---------------------------------------------------------------------------

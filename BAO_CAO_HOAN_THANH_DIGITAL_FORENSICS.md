@@ -110,5 +110,12 @@ python tools/autopsy_handoff.py <case_id> ./autopsy_<case_id>
 - UI: sàn lọc/index actor (sent/received), tìm kiếm, SVG tương tác click node/cạnh hiện evidence, nút Overview/CSV.
 - Giới hạn: chỉ field có thật; không suy luận danh tính; GeoIP local; hiển thị tối đa 240 node/500 cạnh mỗi view.
 
+
+## 14. Index đầy đủ trên tab Relations
+- `/api/graph/index`: trả `total/offset/limit/items/groups`; mỗi item có `message_id, from, to, subject, date, verdict, score, case_id`.
+- Lọc theo `actor/domain/ip/verdict/case` hoặc tìm tự do; phân trang 50 dòng/trang.
+- UI: bảng "STT | Message-ID | Từ | Đến | Tiêu đề | Ngày | Kết luận | Điểm | Case", dòng nhóm `Thư/Actor/Domain/IP/URL/Hash`, click dòng → focus graph; nút Trước/Sau.
+- Khắc phục điểm người dùng không hiểu: trước đây tab chỉ có danh sách actor + SVG, tải ~12s không có thông báo; giờ có "Đang nạp dữ liệu..." + bảng chi tiết rõ ràng.
+
 ## 12. Kết luận
 Hệ thống đã đáp ứng toàn bộ mã yêu cầu E1.1–E3.3, N1–N6, L1–L3 theo tiêu chuẩn đã chốt; mọi phát hiện đều truy được về chứng cứ gốc và được ký SHA-256 gắn phiên người dùng. Không có kết nối mạng trong toàn bộ luồng phân tích và xuất báo cáo.

@@ -74,4 +74,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 
 - 2026-11-27: mở limit /api/cases 500→30000; History gọi limit=30000; test_cases_limit_30000 PASS.
 
+- 2026-11-27: Relations bổ sung /api/graph/index (Message-ID/From/To, phân trang, lọc actor/domain/ip/verdict/case) + bảng thư & nhóm đối tượng trên UI; test_graph_index 2/2 OK.
+
 **Next action:** deploy HEAD (`df33e9d` + bản đếm) lên server; kiểm tra dashboard hiện số case thật và report HTML/PDF/CSV.

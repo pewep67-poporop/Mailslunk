@@ -728,7 +728,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     if (tab.id === 'tabCase') renderCasePane();
     if (tab.id === 'tabAdmin') loadAdmin();
     if (tab.id === 'tabResults') renderCurrentResult();
-    if (tab.id === 'tabRelations') loadRelations();
+    if (tab.id === 'tabRelations') { loadRelations(); loadRelIndex(); }
   };
 });
 // MailSleuth frontend — part 2: analysis streaming, results, message viewer, URL intel, graph.
@@ -1552,6 +1552,40 @@ function relSvg(g) {
   out += '</svg>';
   return out;
 }
+let relOffset = 0;
+const REL_PAGE = 50;
+async function loadRelIndex(q = '', kind = '', offset = 0) {
+  const box = $('relIndex'); if (!box) return;
+  relOffset = offset;
+  box.textContent = 'Đang tải...';
+  try {
+    const u = `/api/graph/index?q=${encodeURIComponent(q)}&kind=${encodeURIComponent(kind)}&offset=${offset}&limit=${REL_PAGE}`;
+    const j = await (await fetch(u)).json();
+    const g = j.groups || {};
+    $('relGroups').textContent = `Thư: ${g.messages||0} · Actor: ${g.actors||0} · Domain: ${g.domains||0} · IP: ${g.ips||0} · URL: ${g.urls||0} · Hash: ${g.attachments||0}`;
+    const table = el('table', 'datatable');
+    const hr = el('tr');
+    ['STT','Message-ID','Từ (From)','Đến (To)','Tiêu đề','Ngày','Kết luận','Điểm','Case'].forEach(x=>hr.append(el('th','',x)));
+    const thead = el('thead'); thead.append(hr); table.append(thead);
+    const tb = el('tbody');
+    (j.items||[]).forEach((m,i)=>{
+      const tr = el('tr');
+      const vals = [offset+i+1, m.message_id||'-', m.from||'-', (m.to||[]).join(', ')||'-',
+                    m.subject||'-', m.date||'-', m.verdict||'-', m.score??'-', m.case_id||''];
+      vals.forEach(v=>tr.append(el('td','',String(v))));
+      tr.style.cursor = 'pointer';
+      tr.onclick = () => loadRelations('case:' + m.case_id);
+      tb.append(tr);
+    });
+    table.append(tb); box.textContent=''; box.append(table);
+    const nav = el('div','toolrow');
+    if (offset>0) { const b=el('button','ghost','← Trước'); b.onclick=()=>loadRelIndex(q,kind,Math.max(0,offset-REL_PAGE)); nav.append(b); }
+    if (offset+REL_PAGE < (j.total||0)) { const b=el('button','ghost','Sau →'); b.onclick=()=>loadRelIndex(q,kind,offset+REL_PAGE); nav.append(b); }
+    nav.append(el('span','hint',`${j.total||0} thư · đang hiện ${offset+1}-${Math.min(offset+REL_PAGE, j.total||0)}`));
+    box.append(nav);
+  } catch(e) { box.textContent = 'Lỗi: ' + e.message; }
+}
+
 async function loadRelations(focus = '') {
   const out = $('relGraph'); if (!out) return;
   const q = ($('relQ')?.value || '').trim();
@@ -2436,6 +2470,6 @@ Object.assign(I18N.en, {  relH: 'Global evidence relations', relHint: 'All analy
 Object.assign(I18N.vi, {  relH: 'Quan h? ch?ng c? toan h? th?ng', relHint: 'Tat ca email da phan tich. Moi duong lay tu field chung cu (From, To, Received, URL, hash). Nham vao node/canh de xem chung cu.', relSearchPh: 'actor / domain / IP / ma vu', relGo: 'Loc', relAll: 'Toan the', relCsv: 'Xuat CSV', relGraph: 'So do quan he', relNoData: 'Chua co quan he.',
 });
 
-$('relGo').onclick = () => loadRelations();
-$('relAll').onclick = () => { $('relQ').value = ''; loadRelations(); };
+$('relGo').onclick = () => { loadRelations(); loadRelIndex(($('relQ')?.value||'').trim()); };
+$('relAll').onclick = () => { $('relQ').value = ''; loadRelations(); loadRelIndex(); };
 $('relCsv').onclick = () => { window.location.href = '/api/graph/global?csv_out=1'; };

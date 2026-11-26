@@ -55,6 +55,7 @@ def load_index(rows: list) -> dict:
             date = str(m.get("date") or "")
             messages.append({
                 "id": mid, "case_id": cid, "msg_index": i,
+                "message_id": str(m.get("message_id") or m.get("messageId") or ""),
                 "subject": str(m.get("subject") or "")[:120],
                 "from": sender, "to": recips[:10], "date": date,
                 "verdict": result.get("verdict") or "",
