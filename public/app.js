@@ -1595,8 +1595,8 @@ async function loadRelations(focus = '') {
     const g = j.graph || {}, idx = j.index || {};
     relGraphCache = g;
     $('relStat').textContent = `${idx.messages || 0} emails · ${idx.actors?.length || 0} actors · ${idx.domains || 0} domains · ${idx.ips || 0} IPs · ${(g.edges||[]).length} edges`;
-    const tb = $('relIndex'); tb.textContent = '';
-    if (!(idx.actors || []).length) tb.textContent = t('relNoData');
+    const tb = $('relActors'); if (tb) tb.textContent = '';
+    if (!(idx.actors || []).length && tb) tb.textContent = t('relNoData');
     for (const a of (idx.actors || []).slice(0, 80)) {
       const row = el('div', 'filerow');
       const b = el('button', 'ghost', a.label); b.type = 'button';
@@ -2465,9 +2465,10 @@ applyLang();
   } catch {}
 })();
 
-Object.assign(I18N.en, {  relH: 'Global evidence relations', relHint: 'All analysed emails. Every line comes from a field in the evidence (From, To, Received, URL, hash). Click a node or edge to inspect.', relSearchPh: 'actor / domain / IP / case id', relGo: 'Focus', relAll: 'Overview', relCsv: 'Export CSV', relGraph: 'Relationship graph', relNoData: 'No relations yet.',
+Object.assign(I18N.en, {  relH: 'Global evidence relations', relHint: 'All analysed emails. Every line comes from a field in the evidence (From, To, Received, URL, hash). Click a node or edge to inspect.', relSearchPh: 'actor / domain / IP / case id', relGo: 'Focus', relAll: 'Overview', relCsv: 'Export CSV', relActorsLabel: 'Actors', relMailList: 'Message index', relGraph: 'Relationship graph', relNoData: 'No relations yet.',
 });
-Object.assign(I18N.vi, {  relH: 'Quan h? ch?ng c? toan h? th?ng', relHint: 'Tat ca email da phan tich. Moi duong lay tu field chung cu (From, To, Received, URL, hash). Nham vao node/canh de xem chung cu.', relSearchPh: 'actor / domain / IP / ma vu', relGo: 'Loc', relAll: 'Toan the', relCsv: 'Xuat CSV', relGraph: 'So do quan he', relNoData: 'Chua co quan he.',
+Object.assign(I18N.vi, {  relH: 'Quan h? ch?ng c? toan h? th?ng', relHint: 'Tat ca email da phan tich. Moi duong lay tu field chung cu (From, To, Received, URL, hash). Nham vao node/canh de xem chung cu.', relSearchPh: 'actor / domain / IP / ma vu', relGo: 'Loc', relAll: 'Toan the', relCsv: 'Xuat CSV', relGraph: 'So do quan he', relNoData: 'Chua co quan he.', relActorsLabel: 'Đối tượng', relMailList: 'Danh sách thư',
+
 });
 
 $('relGo').onclick = () => { loadRelations(); loadRelIndex(($('relQ')?.value||'').trim()); };
