@@ -32,16 +32,20 @@ con.close()
 class SubmissionTest(unittest.TestCase):
     def test_autopsy(self):
         out = TMP / "autopsy"
+        env = dict(os.environ)
+        env["DATA_DIR"] = str(TMP)
         r = subprocess.run([sys.executable, str(ROOT / "tools" / "autopsy_handoff.py"),
-                            CID, str(out)], capture_output=True, text=True)
+                            CID, str(out)], capture_output=True, text=True, env=env)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((out / "manifest.sha256").is_file())
         self.assertTrue((out / "README.md").is_file())
 
     def test_submission_zip(self):
         out = TMP / "sub"
+        env = dict(os.environ)
+        env["DATA_DIR"] = str(TMP)
         r = subprocess.run([sys.executable, str(ROOT / "tools" / "build_submission.py"),
-                            CID, str(out)], capture_output=True, text=True)
+                            CID, str(out)], capture_output=True, text=True, env=env)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((out / "report.html").is_file())
         self.assertTrue((out / "report.pdf").is_file())
