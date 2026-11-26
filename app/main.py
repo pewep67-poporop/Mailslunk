@@ -1303,6 +1303,51 @@ async def map_post(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Global Relations (toàn hệ thống) - tab Relations
+# ---------------------------------------------------------------------------
+_GLOBAL_CACHE = {"ts": 0.0, "index": None}
+
+
+def _global_index():
+    import time as _t
+    if _GLOBAL_CACHE["index"] is not None and _t.time() - _GLOBAL_CACHE["ts"] < 300:
+        return _GLOBAL_CACHE["index"]
+    from .global_graph import load_index
+    con = connect()
+    rows = con.execute("SELECT id, result FROM cases WHERE json_valid(result)").fetchall()
+    con.close()
+    parsed = []
+    for r in rows:
+        try:
+            parsed.append({"id": r["id"], "result": json.loads(r["result"] or "{}")})
+        except Exception:
+            pass
+    idx = load_index(parsed)
+    _GLOBAL_CACHE["index"] = idx
+    _GLOBAL_CACHE["ts"] = _t.time()
+    return idx
+
+
+@app.get("/api/graph/global")
+async def global_graph(request: Request, focus: str = "", limit: int = 200, csv_out: int = 0):
+    s = require_auth(request)
+    idx = _global_index()
+    from . import global_graph as gg
+    g = gg.neighborhood(idx, focus or "overview", max(20, min(int(limit or 200), 500))) \
+        if focus else gg.overview(idx, max(20, min(int(limit or 200), 500)))
+    if csv_out:
+        return PlainTextResponse(gg.to_csv(g["edges"]), media_type="text/csv; charset=utf-8",
+                                 headers={"Content-Disposition": 'attachment; filename="global-relations.csv"'})
+    actors = idx["actors"]
+    top = [{"id": "actor:" + a, "label": a, "sent": v["sent"], "received": v["received"]}
+           for a, v in sorted(actors.items(), key=lambda x: -(x[1]["sent"] + x[1]["received"]))[:60]]
+    return {"graph": g, "index": {"actors": top,
+                                  "messages": len(idx["messages"]),
+                                  "domains": len(idx["domains"]),
+                                  "ips": len(idx["ips"])}}
+
+
+# ---------------------------------------------------------------------------
 # Forensic case data (P6) - mọi ghi re-sign SHA-256 theo phiên
 # ---------------------------------------------------------------------------
 _FORENSIC_TABLES = {

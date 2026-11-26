@@ -70,4 +70,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 
 - 2026-11-27: fix rate tạm thời: RATE_ANALYZE_STREAM 1200→6000, RATE_ANALYZE_BATCH 200→2000, client pace 60ms giữa các file (tránh 429/crash tạm thời).
 
+- 2026-11-27: Relations global: tab mới thay DNS/IP-Geo; app/global_graph.py + /api/graph/global + UI filter/index/SVG/CSV; tests/test_global_graph.py 4/4 OK.
+
 **Next action:** deploy HEAD (`df33e9d` + bản đếm) lên server; kiểm tra dashboard hiện số case thật và report HTML/PDF/CSV.

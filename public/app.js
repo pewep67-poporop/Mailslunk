@@ -50,7 +50,7 @@ en: {
  dashFindings: 'Findings', dashRelations: 'Relations', tabCase: 'Case file', caseH: 'Case file & chain of custody',
  caseHint: 'Objective, scope, evidence inventory, custody, timeline, assessment, response and team. All re-signed.',
   tabAnalysis: 'Analysis', tabResults: 'Results', tabGuide: 'Guide', tabHistory: 'History', tabDns: 'DNS',
-  tabIp: 'IP / Geo', tabTrust: 'Local AI', tabAdmin: 'Administration', tabLogs: 'Logs',
+  tabRelations: 'Relations', tabAdmin: 'Administration', tabLogs: 'Logs',
   platformLabel: 'Platform', platformAuto: 'Auto-detect',
   dropHint: 'Drag & drop email files or whole folders here, or use the buttons below.',
   pickFilesBtn: 'Choose files', pickFolderBtn: 'Choose folder', clearList: 'Clear list',
@@ -190,7 +190,7 @@ vi: {
   appH: 'Bộ dữ liệu email',
   dashCases: 'Vụ việc', dashMessages: 'Số thư', dashBad: 'Độc hại', dashWarn: 'Đáng ngờ', dashOk: 'Sạch',
   tabAnalysis: 'Phân tích', tabResults: 'Kết quả', tabGuide: 'Hướng dẫn', tabHistory: 'Lịch sử', tabDns: 'DNS',
-  tabIp: 'IP / Bản đồ', tabTrust: 'AI nội bộ', tabAdmin: 'Quản trị', tabLogs: 'Nhật ký',
+  tabRelations: 'Quan hệ chứng cứ',
   platformLabel: 'Nền tảng', platformAuto: 'Tự nhận diện',
   dropHint: 'Kéo & thả tệp email hoặc cả thư mục vào đây, hoặc dùng nút bên dưới.',
   pickFilesBtn: 'Chọn tệp', pickFolderBtn: 'Chọn thư mục', clearList: 'Xóa danh sách',
@@ -728,6 +728,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     if (tab.id === 'tabCase') renderCasePane();
     if (tab.id === 'tabAdmin') loadAdmin();
     if (tab.id === 'tabResults') renderCurrentResult();
+    if (tab.id === 'tabRelations') loadRelations();
   };
 });
 // MailSleuth frontend — part 2: analysis streaming, results, message viewer, URL intel, graph.
@@ -1516,6 +1517,59 @@ async function renderUrls(out, r) {
     });
     out.append(table);
   }
+}
+
+let relGraphCache = null;
+function relSvg(g) {
+  const nodes = g.nodes || [], edges = g.edges || [];
+  const W = 1000, H = 600, cx = W / 2, cy = H / 2;
+  const pos = {};
+  const kinds = [...new Set(nodes.map(n => n.kind))];
+  kinds.forEach((k, ki) => {
+    const grp = nodes.filter(n => n.kind === k);
+    grp.forEach((n, i) => {
+      const r = 120 + ki * 70;
+      const a = (2 * Math.PI * i / Math.max(1, grp.length)) - Math.PI / 2;
+      pos[n.id] = [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+    });
+  });
+  const color = {actor:'#7c3aed',message:'#2563eb',domain:'#0891b2',ip:'#dc2626',geo:'#0e7490',url:'#d97706',attachment:'#059669'};
+  let out = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-height:70vh;background:#f8fafc" role="img">`;
+  for (const e of edges) {
+    if (!pos[e.src] || !pos[e.dst]) continue;
+    const [x1,y1]=pos[e.src], [x2,y2]=pos[e.dst];
+    out += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#94a3b8" stroke-width="1"><title>${e.rel}: ${e.evidence||''}</title></line>`;
+  }
+  for (const n of nodes) {
+    const [x,y]=pos[n.id] || [cx,cy];
+    out += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="14" fill="${color[n.kind]||'#64748b'}" stroke="#fff" stroke-width="2" data-node="${n.id}" style="cursor:pointer"><title>${n.label} (${n.kind})</title></circle>`;
+  }
+  out += '</svg>';
+  return out;
+}
+async function loadRelations(focus = '') {
+  const out = $('relGraph'); if (!out) return;
+  const q = ($('relQ')?.value || '').trim();
+  const url = '/api/graph/global' + (focus || q ? '?focus=' + encodeURIComponent(focus || q) : '');
+  try {
+    const j = await (await fetch(url)).json();
+    const g = j.graph || {}, idx = j.index || {};
+    relGraphCache = g;
+    $('relStat').textContent = `${idx.messages || 0} emails · ${idx.actors?.length || 0} actors · ${idx.domains || 0} domains · ${idx.ips || 0} IPs · ${(g.edges||[]).length} edges`;
+    const tb = $('relIndex'); tb.textContent = '';
+    if (!(idx.actors || []).length) tb.textContent = t('relNoData');
+    for (const a of (idx.actors || []).slice(0, 80)) {
+      const row = el('div', 'filerow');
+      const b = el('button', 'ghost', a.label); b.type = 'button';
+      b.onclick = () => loadRelations(a.id);
+      row.append(b, el('span', 'fsize', `${a.sent}/${a.received}`));
+      tb.append(row);
+    }
+    out.innerHTML = relSvg(g);
+    out.querySelectorAll('[data-node]').forEach(c => {
+      c.onclick = () => loadRelations(c.getAttribute('data-node'));
+    });
+  } catch (e) { $('relStat').textContent = t('errNetwork') + ' ' + e.message; }
 }
 
 async function renderCasePane() {
@@ -2371,3 +2425,12 @@ applyLang();
     if (r.ok) enterApp(await r.json());
   } catch {}
 })();
+
+Object.assign(I18N.en, {  relH: 'Global evidence relations', relHint: 'All analysed emails. Every line comes from a field in the evidence (From, To, Received, URL, hash). Click a node or edge to inspect.', relSearchPh: 'actor / domain / IP / case id', relGo: 'Focus', relAll: 'Overview', relCsv: 'Export CSV', relGraph: 'Relationship graph', relNoData: 'No relations yet.',
+});
+Object.assign(I18N.vi, {  relH: 'Quan h? ch?ng c? toan h? th?ng', relHint: 'Tat ca email da phan tich. Moi duong lay tu field chung cu (From, To, Received, URL, hash). Nham vao node/canh de xem chung cu.', relSearchPh: 'actor / domain / IP / ma vu', relGo: 'Loc', relAll: 'Toan the', relCsv: 'Xuat CSV', relGraph: 'So do quan he', relNoData: 'Chua co quan he.',
+});
+
+$('relGo').onclick = () => loadRelations();
+$('relAll').onclick = () => { $('relQ').value = ''; loadRelations(); };
+$('relCsv').onclick = () => { window.location.href = '/api/graph/global?csv_out=1'; };

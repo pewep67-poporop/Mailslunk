@@ -289,3 +289,6 @@ flowchart LR
 - `TIME_NEAR` và map mũi tên là lớp suy luận/phụ, không dùng để kết luận.
 
 > Mọi thay đổi kiến trúc phải cập nhật đồng thời tài liệu này, `HUONG_DAN_SETUP_PYTHON.md` và `TIEN_DO_BUILD.md`.
+
+## 11. Global Relations (bổ sung)
+`app/global_graph.py` + `/api/graph/global` + tab **Relations** thay cho DNS/IP-Geo: index toàn bộ case → cạnh `SENT/TO/ORIGIN_IP/...` có evidence → UI lọc/index/SVG/CSV. Xem `BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md` mục 13.

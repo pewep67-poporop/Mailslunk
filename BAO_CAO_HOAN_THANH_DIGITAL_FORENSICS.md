@@ -101,5 +101,14 @@ python tools/autopsy_handoff.py <case_id> ./autopsy_<case_id>
 - `/api/cases` có `limit` tối đa 500 (chống tải nặng), nên dashboard dùng API này đã hiển thị sai thành 500 case dù DB có nhiều hơn.
 - Thêm `/api/cases/count`: đếm trực tiếp từ SQLite theo `uid` (admin: toàn bộ), trả `cases/messages/bad/warn/ok`; dashboard dùng endpoint này.
 
+
+## 13. Quan hệ toàn hệ thống (tab Relations)
+- Bỏ tab DNS/IP-Geo (không còn phù hợp chế độ offline), thay bằng tab **Relations**.
+- `app/global_graph.py`: index actor/domain/IP/URL/hash từ **mọi case**, sinh cạnh có evidence:
+  `SENT` (ai gửi), `TO` (gửi cho ai), `ORIGIN_IP` (từ đâu tới), `USES_DOMAIN`, `CONTAINS_URL`, `HAS_ATTACHMENT`.
+- `GET /api/graph/global?focus=&limit=&csv_out=1`: chế độ overview hoặc neighborhood theo actor/ip/domain/url/hash/case; export CSV.
+- UI: sàn lọc/index actor (sent/received), tìm kiếm, SVG tương tác click node/cạnh hiện evidence, nút Overview/CSV.
+- Giới hạn: chỉ field có thật; không suy luận danh tính; GeoIP local; hiển thị tối đa 240 node/500 cạnh mỗi view.
+
 ## 12. Kết luận
 Hệ thống đã đáp ứng toàn bộ mã yêu cầu E1.1–E3.3, N1–N6, L1–L3 theo tiêu chuẩn đã chốt; mọi phát hiện đều truy được về chứng cứ gốc và được ký SHA-256 gắn phiên người dùng. Không có kết nối mạng trong toàn bộ luồng phân tích và xuất báo cáo.

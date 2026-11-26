@@ -75,8 +75,7 @@
 <button type="button" class="tab" id="tabResults" role="tab" aria-selected="false" aria-controls="paneResults" data-pane="paneResults" data-i18n="tabResults">Results</button>
 <button type="button" class="tab" id="tabGuide" role="tab" aria-selected="false" aria-controls="paneGuide" data-pane="paneGuide" data-i18n="tabGuide">Guide</button>
 <button type="button" class="tab" id="tabHistory" role="tab" aria-selected="false" aria-controls="paneHistory" data-pane="paneHistory" data-i18n="tabHistory">History</button>
-<button type="button" class="tab" id="tabDns" role="tab" aria-selected="false" aria-controls="paneDns" data-pane="paneDns" data-i18n="tabDns">DNS</button>
-<button type="button" class="tab" id="tabIp" role="tab" aria-selected="false" aria-controls="paneIp" data-pane="paneIp" data-i18n="tabIp">IP / Geo</button>
+<button type="button" class="tab" id="tabRelations" role="tab" aria-selected="false" aria-controls="paneRelations" data-pane="paneRelations" data-i18n="tabRelations">Relations</button>
 <button type="button" class="tab" id="tabCase" role="tab" aria-selected="false" aria-controls="paneCase" data-pane="paneCase" data-i18n="tabCase">Case file</button>
 <button type="button" class="tab" id="tabAdmin" role="tab" aria-selected="false" aria-controls="paneAdmin" data-pane="paneAdmin" data-i18n="tabAdmin" hidden>Administration</button>
 <button type="button" class="tab" id="tabLogs" role="tab" aria-selected="false" aria-controls="paneLogs" data-pane="paneLogs" data-i18n="tabLogs" hidden>Logs</button>
@@ -168,28 +167,14 @@
 <p class="hint" data-i18n="historyHint">Latest 100 cases. Open a case to restore its result.</p>
 <p id="histMsg" role="alert"></p><div id="histOut" aria-live="polite"></div>
 </div>
-<div id="paneDns" role="tabpanel" aria-labelledby="tabDns" hidden>
-<h3 data-i18n="dnsH">DNS lookup</h3>
-<div class="toolrow">
-<input id="dnsDomain" data-i18n-ph="dnsDomain" placeholder="example.com or IP" autocomplete="off" maxlength="253">
-<select id="dnsType" data-i18n-aria="dnsTypeAria">
-<option value="all" data-i18n="dnsTypeAll">All records / DNS health</option>
-<option value="a">A</option><option value="aaaa">AAAA</option><option value="mx">MX</option>
-<option value="txt">TXT</option><option value="spf">SPF</option><option value="dmarc">DMARC</option>
-<option value="dkim">DKIM</option><option value="ns">NS</option><option value="soa">SOA</option>
-<option value="ptr">PTR</option><option value="asn">ASN</option><option value="blacklist">Blacklist</option>
-</select>
-<button id="dnsGo" data-i18n="lookup">Lookup</button>
-</div>
-<div class="toolrow" id="dnsDkimRow" hidden><input id="dnsSelector" data-i18n-ph="dnsSelector" placeholder="DKIM selector (e.g. default)" autocomplete="off" maxlength="64"></div>
-<p class="hint" data-i18n="dnsHint">DNS chỉ đọc snapshot local (tools/dns_snapshot.py). Không truy vấn resolver mạng.</p>
-<p id="dnsMsg" role="alert"></p><div id="dnsOut" aria-live="polite"></div>
-</div>
-<div id="paneIp" role="tabpanel" aria-labelledby="tabIp" hidden>
-<h3 data-i18n="ipH">IP geolocation and network</h3>
-<div class="toolrow"><input id="ipAddr" data-i18n-ph="ipAddr" placeholder="8.8.8.8" autocomplete="off" maxlength="45"><button id="ipGo" data-i18n="lookup">Lookup</button></div>
-<p class="hint" data-i18n="ipHint">MaxMind GeoLite2 is used locally. PTR is queried through this server. The map is an internal schematic; location is approximate and may be affected by VPN/proxy.</p>
-<p id="ipMsg" role="alert"></p><div id="ipOut" aria-live="polite"></div>
+<div id="paneRelations" role="tabpanel" aria-labelledby="tabRelations" hidden>
+<h3 data-i18n="relH">Global evidence relations</h3>
+<p class="hint" data-i18n="relHint">All analysed emails. Every line comes from a field in the evidence (From, To, Received, URL, hash). Filter by actor/domain/IP or search, click a node to focus, click an edge to see evidence.</p>
+<div class="toolrow"><input id="relQ" data-i18n-ph="relSearchPh" placeholder="actor / domain / IP / case id"><button id="relGo" type="button" data-i18n="relGo">Focus</button><button id="relAll" type="button" class="ghost" data-i18n="relAll">Overview</button><button id="relCsv" type="button" class="ghost" data-i18n="relCsv">CSV</button></div>
+<p class="summary" id="relStat" role="status"></p>
+<div id="relIndex" class="tablewrap"></div>
+<details id="relGraphBox"><summary data-i18n="relGraph">Relationship graph</summary><div id="relGraph"></div></details>
+<div id="relEvidence" class="hint"></div>
 </div>
 <div id="paneCase" role="tabpanel" aria-labelledby="tabCase" hidden>
 <h3 data-i18n="caseH">Case file & chain of custody</h3>
