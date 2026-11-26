@@ -138,6 +138,12 @@ def neighborhood(idx: dict, focus: str, limit: int = MAX_NODES) -> dict:
         if m["from"]:
             aid = _node(nodes, "actor:" + m["from"], m["from"], "actor", "From header")
             edge(aid, mid, "SENT", f"{m['id']} From: {m['from']}")
+            # Cạnh trực tiếp người gửi -> người nhận (cặp quan hệ rõ ràng)
+            for a in m["to"]:
+                if a and a != m["from"]:
+                    rid = _node(nodes, "actor:" + a, a, "actor", "To/Cc/Bcc header")
+                    edge(aid, rid, "SENT_TO",
+                         f"{m['id']} From: {m['from']} -> To: {a} ({m['subject'] or 'no subject'})")
         for a in m["to"]:
             rid = _node(nodes, "actor:" + a, a, "actor", "To/Cc/Bcc header")
             edge(mid, rid, "TO", f"{m['id']} recipient: {a}")
@@ -155,17 +161,41 @@ def neighborhood(idx: dict, focus: str, limit: int = MAX_NODES) -> dict:
 
 def overview(idx: dict, limit: int = 120) -> dict:
     nodes, edges = {}, []
+    seen = set()
+
+    def edge(src, dst, rel, evidence):
+        key = (src, dst, rel)
+        if key in seen or len(edges) >= MAX_EDGES:
+            return
+        seen.add(key)
+        edges.append({"src": src, "dst": dst, "rel": rel, "evidence": evidence[:300]})
+
+    # Cặp actor<->actor từ From/To thật (ai gửi cho ai) — xếp theo số lần
+    pairs = defaultdict(int)
+    pair_ev = {}
+    for m in idx["messages"]:
+        if not m["from"]:
+            continue
+        for a in m["to"]:
+            if a and a != m["from"]:
+                key = (m["from"], a)
+                pairs[key] += 1
+                pair_ev.setdefault(key, f"{m['id']} From: {m['from']} -> To: {a}")
+    for (frm, to), count in sorted(pairs.items(), key=lambda x: -x[1])[:limit]:
+        sid = _node(nodes, "actor:" + frm, frm, "actor", f"{count} sent")
+        tid = _node(nodes, "actor:" + to, to, "actor", f"{count} received")
+        edge(sid, tid, "SENT_TO", f"{pair_ev[(frm, to)]} (x{count})")
+
     for addr, info in list(sorted(idx["actors"].items(),
                                   key=lambda x: -len(x[1]["messages"])))[:limit // 2]:
         nid = _node(nodes, "actor:" + addr, addr, "actor",
                     f"{info['sent']} sent / {info['received']} received")
         for d in sorted({_domain(addr)} - {""}):
             did = _node(nodes, "domain:" + d, d, "domain", "email domain")
-            edges.append({"src": nid, "dst": did, "rel": "USES_DOMAIN",
-                          "evidence": f"{addr} domain {d}"})
+            edge(nid, did, "USES_DOMAIN", f"{addr} domain {d}")
     for ip, mids in list(sorted(idx["ips"].items(), key=lambda x: -len(x[1])))[:limit // 3]:
         nid = _node(nodes, "ip:" + ip, ip, "ip", f"{len(mids)} messages")
-    return {"nodes": list(nodes.values())[:limit],
+    return {"nodes": list(nodes.values())[:limit * 2],
             "edges": [e for e in edges if e["src"] in nodes and e["dst"] in nodes][:MAX_EDGES],
             "focus": "overview", "returned": len(nodes), "truncated": True}
 

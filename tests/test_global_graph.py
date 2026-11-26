@@ -38,6 +38,9 @@ class GlobalGraphTest(unittest.TestCase):
         rels = {e["rel"] for e in g["edges"]}
         self.assertIn("SENT", rels)
         self.assertIn("TO", rels)
+        self.assertIn("SENT_TO", rels)
+        pair = [e for e in g["edges"] if e["rel"] == "SENT_TO"][0]
+        self.assertIn("bob@example.test", pair["evidence"])
         self.assertTrue(all(e.get("evidence") for e in g["edges"]))
 
     def test_neighborhood_ip(self):
@@ -47,6 +50,7 @@ class GlobalGraphTest(unittest.TestCase):
     def test_overview(self):
         g = overview(self.idx)
         self.assertTrue(g["nodes"])
+        self.assertIn("SENT_TO", {e["rel"] for e in g["edges"]})
         self.assertIn("src", to_csv(g["edges"]))
 
 

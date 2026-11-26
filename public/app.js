@@ -65,7 +65,7 @@ en: {
   noFile: 'Choose at least one file.', uploadErrors: 'Some files could not be analyzed',
   analysisControls: 'Analysis controls', liveTitle: 'Analysis', liveFile: 'File', liveStage: 'Stage', liveDetail: 'Detail',
   resultsH: 'Analysis results', resOverview: 'Overview', resMessages: 'Headers & body', resUrls: 'URLs by target',
-  resGraph: 'Entity graph', resTimeline: 'Timeline', repHtml: 'Report HTML', repPdf: 'Report PDF', repCsv: 'Report CSV',
+  resGraph: 'Entity graph', totalMails: 'Total analysed', resTimeline: 'Timeline', repHtml: 'Report HTML', repPdf: 'Report PDF', repCsv: 'Report CSV',
   repBundle: 'Export bundle…', repVerify: 'Verify signature', urlCsv: 'Export URL CSV',
   urlImport: 'Import URL CSV/JSON/XML/TXT', urlImportDir: 'Import folder', graphBtn: 'Entity graph',
   noResult: 'No result yet — run an analysis first.', caseLabel: 'Case', score: 'Score', verdict: 'Verdict',
@@ -1098,6 +1098,11 @@ function renderCurrentResult() {
   first.title = t('clientLabel');
   strip.append(first);
   strip.append(el('span', 'clientMeta', `${t('platformLabel')}: ${r.platform || 'auto'} · ${t('verdict')}: ${verdictText(r.verdict)} · ${r.score}/100`));
+  const totalNote = el('span', 'hint', '');
+  strip.append(totalNote);
+  fetch('/api/cases/count').then(x => x.json()).then(j => {
+    totalNote.textContent = ` · ${t('totalMails') || 'Total analysed'}: ${j.cases || 0} (mỗi .eml = 1 thư)`;
+  }).catch(() => {});
   out.append(strip);
 
   const tabs = el('div', 'subtabs');
