@@ -47,6 +47,8 @@ en: {
   signedIn: 'Signed in: ',
   appH: 'Email dataset',
   dashCases: 'Cases', dashMessages: 'Messages', dashBad: 'Malicious', dashWarn: 'Suspicious', dashOk: 'Clean',
+ dashFindings: 'Findings', dashRelations: 'Relations', tabCase: 'Case file', caseH: 'Case file & chain of custody',
+ caseHint: 'Objective, scope, evidence inventory, custody, timeline, assessment, response and team. All re-signed.',
   tabAnalysis: 'Analysis', tabResults: 'Results', tabGuide: 'Guide', tabHistory: 'History', tabDns: 'DNS',
   tabIp: 'IP / Geo', tabTrust: 'Local AI', tabAdmin: 'Administration', tabLogs: 'Logs',
   platformLabel: 'Platform', platformAuto: 'Auto-detect',
@@ -102,15 +104,15 @@ en: {
   guide6: 'The report carries a SHA-256 digital seal in the bottom-right corner. Verify it any time with “Verify signature”.',
   guide7: 'URL statistics are grouped by target (sender, body, attachment, imported). Export them to CSV or import CSV/JSON/XML/TXT for one-pass local re-analysis.',
   guide8: 'The entity graph at the end is built only from evidence (headers, IPs, URLs, hashes); it does not guess identities.',
-  guide9: 'The local AI endpoint is optional and must stay on localhost/private addresses. No cloud AI provider is supported.',
+  guide9: '100% offline forensic: no external API, no reputation feed, no AI/ML verdict; evidence-backed local rules only.',
   guideNotes: 'Notes and cautions',
-  guideN1: 'Offline by default: live DNS is disabled unless the server sets LIVE_DNS=1. GeoIP uses the local MaxMind database.',
+  guideN1: 'No live DNS: SPF/DKIM/DMARC come from Authentication-Results or a local DNS snapshot. GeoIP is local MaxMind.',
   guideN2: 'Duplicate Message-ID values are normal in exported mailboxes; the tool keeps every record and its filename/folder provenance.',
   guideN3: 'A missing display name is not proof of spoofing; findings show the evidence and the weight used.',
   guideN4: 'Administrators must enroll with the offline keygen (password + CCCD salt). The CCCD is never stored.',
   guideN5: 'The map is an internal schematic, not an online tile service; it marks the server location found in the mail.',
   dnsH: 'DNS lookup', dnsDomain: 'example.com or IP', dnsTypeAll: 'All records / DNS health', dnsTypeAria: 'DNS record type',
-  dnsSelector: 'DKIM selector (e.g. default)', dnsHint: 'Native DNS queries this server. Live queries require LIVE_DNS=1; otherwise the resolver reports the offline state.',
+  dnsSelector: 'DKIM selector (e.g. default)', dnsHint: 'DNS only reads the local snapshot (tools/dns_snapshot.py). No network resolver.',
   lookup: 'Lookup', noRecords: 'no records', notFoundLabel: 'not found',
   ipH: 'IP geolocation and network', ipAddr: '8.8.8.8', ipHint: 'MaxMind GeoLite2 is used locally. PTR is queried through this server. The map is an internal schematic; location is approximate and may be affected by VPN/proxy.',
   trustH: 'Local AI endpoint', trustHint: 'Only a local OpenAI-compatible endpoint is supported (Ollama, LM Studio, llama.cpp, vLLM). Cloud providers are refused. The key is stored server-side per account and is never echoed back.',
@@ -542,8 +544,7 @@ function enterApp(j) {
   startSessionTimer(j.expiresAt);
   loadProfile();
   loadDashboard();
-  loadTrustStatus();
-}
+  }
 
 function leaveApp() {
   csrf = ''; user = ''; role = ''; uid = '';
@@ -724,7 +725,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     switchTab(tab.id);
     if (tab.id === 'tabHistory') loadHistory();
     if (tab.id === 'tabLogs') loadLogs();
-    if (tab.id === 'tabTrust') loadTrustStatus();
+    if (tab.id === 'tabCase') renderCasePane();
     if (tab.id === 'tabAdmin') loadAdmin();
     if (tab.id === 'tabResults') renderCurrentResult();
   };
@@ -1485,6 +1486,43 @@ async function renderUrls(out, r) {
   }
 }
 
+async function renderCasePane() {
+  const out = $('caseOut');
+  if (!out) return;
+  const cid = currentCase();
+  if (!cid) { out.textContent = t('noResult'); return; }
+  out.textContent = '...';
+  const kinds = ['meta', 'inventory', 'custody', 'timeline', 'assessments', 'responses', 'screenshots', 'team'];
+  out.textContent = '';
+  for (const k of kinds) {
+    try {
+      const r = await fetch(`/api/case/${cid}/forensic/${k}`, { credentials: 'same-origin' });
+      const j = await r.json();
+      const box = el('details');
+      box.append(el('summary', '', k));
+      const data = j.data;
+      const rows = Array.isArray(data) ? data : (data && Object.keys(data).length ? [data] : []);
+      if (!rows.length) { box.append(el('p', 'hint', t('noResult'))); }
+      else {
+        const keys = Array.from(new Set(rows.flatMap(x => Object.keys(x)))).filter(x => x !== 'uid');
+        const table = el('table');
+        const thead = el('thead');
+        const hrow = el('tr');
+        keys.forEach(key => hrow.append(el('th', '', key)));
+        thead.append(hrow); table.append(thead);
+        const tbody = el('tbody');
+        rows.forEach(row => {
+          const tr = el('tr');
+          keys.forEach(key => tr.append(el('td', '', String(row[key] ?? ''))));
+          tbody.append(tr);
+        });
+        table.append(tbody); box.append(table);
+      }
+      out.append(box);
+    } catch (e) { out.append(el('p', 'hint', k + ': ' + e.message)); }
+  }
+}
+
 async function renderGraph(out, r) {
   const cid = r.custody.caseId;
   const vi = lang === 'vi';
@@ -1649,6 +1687,13 @@ async function loadDashboard() {
     if ($('dashBad')) $('dashBad').textContent = String(bad);
     if ($('dashWarn')) $('dashWarn').textContent = String(warn);
     if ($('dashOk')) $('dashOk').textContent = String(ok);
+    let findings = 0, relations = 0;
+    for (const r of lastResults || []) {
+      findings += (r.findings || []).length;
+      relations += ((r.relations || {}).count || 0);
+    }
+    if ($('dashFindings')) $('dashFindings').textContent = String(findings);
+    if ($('dashRelations')) $('dashRelations').textContent = String(relations);
   } catch {}
 }
 
@@ -2262,9 +2307,6 @@ $('histGo').onclick = () => loadHistory(true);
 $('histRefresh').onclick = () => loadHistory(true);
 $('histQ').addEventListener('keydown', e => { if (e.key === 'Enter') loadHistory(true); });
 $('logsRefresh').onclick = () => loadLogs(true);
-$('trustSave').onclick = saveTrust;
-$('trustTest').onclick = testTrust;
-$('trustClear').onclick = clearTrustKey;
 $('adminRefresh').onclick = () => loadAdmin(true);
 $('acGo').onclick = createAccount;
 $('acRole').onchange = () => { $('acCccd').hidden = $('acRole').value !== 'admin'; };

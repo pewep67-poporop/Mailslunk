@@ -34,6 +34,7 @@ L1 điểm theo quy trình/bằng chứng · L2 giải thích · L3 thiếu thì
 - [x] **P8** — `tools/autopsy_handoff.py`; test_submission 2/2 OK.
 - [x] **P9** — `tools/build_submission.py` ZIP PDF/HTML/CSV/STIX/relations/graph/slide/manifest; test_submission 2/2 OK.
 - [x] **P10** — docs + 31/31 test + `BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md`; commit/push cuối.
+- [x] **P11 (bổ sung)** — dashboard: thay tab Local AI bằng tab **Case file** (meta/inventory/custody/timeline/assessment/response/screenshot/team); thêm card Findings/Relations; sửa Guide/DNS hint cho đúng offline.
 
 ## 4. Test nghiệm thu bắt buộc (chạy sau mỗi phase)
 ```powershell

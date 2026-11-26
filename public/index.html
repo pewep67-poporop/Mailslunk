@@ -62,6 +62,8 @@
     <div class="dashCard bad"><span class="dashN" id="dashBad">0</span><span data-i18n="dashBad">Malicious</span></div>
     <div class="dashCard warn"><span class="dashN" id="dashWarn">0</span><span data-i18n="dashWarn">Suspicious</span></div>
     <div class="dashCard ok"><span class="dashN" id="dashOk">0</span><span data-i18n="dashOk">Clean</span></div>
+    <div class="dashCard"><span class="dashN" id="dashFindings">0</span><span data-i18n="dashFindings">Findings</span></div>
+    <div class="dashCard"><span class="dashN" id="dashRelations">0</span><span data-i18n="dashRelations">Relations</span></div>
   </div>
   <div class="platRow">
     <button type="button" class="platCard" id="platWin" data-platform="windows"><span class="platIco">🪟</span><span><b>Windows</b><small>Outlook / MSG / PST→EML</small></span></button>
@@ -75,7 +77,7 @@
 <button type="button" class="tab" id="tabHistory" role="tab" aria-selected="false" aria-controls="paneHistory" data-pane="paneHistory" data-i18n="tabHistory">History</button>
 <button type="button" class="tab" id="tabDns" role="tab" aria-selected="false" aria-controls="paneDns" data-pane="paneDns" data-i18n="tabDns">DNS</button>
 <button type="button" class="tab" id="tabIp" role="tab" aria-selected="false" aria-controls="paneIp" data-pane="paneIp" data-i18n="tabIp">IP / Geo</button>
-<button type="button" class="tab" id="tabTrust" role="tab" aria-selected="false" aria-controls="paneTrust" data-pane="paneTrust" data-i18n="tabTrust">Local AI</button>
+<button type="button" class="tab" id="tabCase" role="tab" aria-selected="false" aria-controls="paneCase" data-pane="paneCase" data-i18n="tabCase">Case file</button>
 <button type="button" class="tab" id="tabAdmin" role="tab" aria-selected="false" aria-controls="paneAdmin" data-pane="paneAdmin" data-i18n="tabAdmin" hidden>Administration</button>
 <button type="button" class="tab" id="tabLogs" role="tab" aria-selected="false" aria-controls="paneLogs" data-pane="paneLogs" data-i18n="tabLogs" hidden>Logs</button>
 </nav>
@@ -148,11 +150,11 @@
 <li data-i18n="guide6">The report carries a SHA-256 digital seal in the bottom-right corner. Verify it any time with “Verify signature”.</li>
 <li data-i18n="guide7">URL statistics are grouped by target (sender, body, attachment, imported). Export them to CSV or import CSV/JSON/XML/TXT for one-pass local re-analysis.</li>
 <li data-i18n="guide8">The entity graph at the end is built only from evidence (headers, IPs, URLs, hashes); it does not guess identities.</li>
-<li data-i18n="guide9">The local AI endpoint is optional and must stay on localhost/private addresses. No cloud AI provider is supported.</li>
+<li data-i18n="guide9">100% offline forensic: no external API, no reputation feed, no AI/ML verdict. Analysis uses local Python libraries and evidence-backed rules.</li>
 </ol>
 <h4 data-i18n="guideNotes">Notes and cautions</h4>
 <ul>
-<li data-i18n="guideN1">Offline by default: live DNS is disabled unless the server sets LIVE_DNS=1. GeoIP uses the local MaxMind database.</li>
+<li data-i18n="guideN1">Không truy DNS live: SPF/DKIM/DMARC đọc từ Authentication-Results trong header hoặc snapshot DNS local. GeoIP dùng MaxMind tại máy.</li>
 <li data-i18n="guideN2">Duplicate Message-ID values are normal in exported mailboxes; the tool keeps every record and its filename/folder provenance.</li>
 <li data-i18n="guideN3">A missing display name is not proof of spoofing; findings show the evidence and the weight used.</li>
 <li data-i18n="guideN4">Administrators must enroll with the offline keygen (password + CCCD salt). The CCCD is never stored.</li>
@@ -180,7 +182,7 @@
 <button id="dnsGo" data-i18n="lookup">Lookup</button>
 </div>
 <div class="toolrow" id="dnsDkimRow" hidden><input id="dnsSelector" data-i18n-ph="dnsSelector" placeholder="DKIM selector (e.g. default)" autocomplete="off" maxlength="64"></div>
-<p class="hint" data-i18n="dnsHint">Native DNS queries this server. Live queries require LIVE_DNS=1; otherwise the resolver reports the offline state.</p>
+<p class="hint" data-i18n="dnsHint">DNS chỉ đọc snapshot local (tools/dns_snapshot.py). Không truy vấn resolver mạng.</p>
 <p id="dnsMsg" role="alert"></p><div id="dnsOut" aria-live="polite"></div>
 </div>
 <div id="paneIp" role="tabpanel" aria-labelledby="tabIp" hidden>
@@ -189,20 +191,10 @@
 <p class="hint" data-i18n="ipHint">MaxMind GeoLite2 is used locally. PTR is queried through this server. The map is an internal schematic; location is approximate and may be affected by VPN/proxy.</p>
 <p id="ipMsg" role="alert"></p><div id="ipOut" aria-live="polite"></div>
 </div>
-<div id="paneTrust" role="tabpanel" aria-labelledby="tabTrust" hidden>
-<h3 data-i18n="trustH">Local AI endpoint</h3>
-<p class="hint" data-i18n="trustHint">Only a local OpenAI-compatible endpoint is supported (Ollama, LM Studio, llama.cpp, vLLM). Cloud providers are refused. The key is stored server-side per account and is never echoed back.</p>
-<div class="toolrow"><label for="llmBase" data-i18n="llmBase">Endpoint</label><input id="llmBase" placeholder="http://127.0.0.1:11434/v1" autocomplete="off" maxlength="300"></div>
-<div class="toolrow"><label for="llmModel" data-i18n="llmModel">Model</label><input id="llmModel" placeholder="qwen2.5:7b" autocomplete="off" maxlength="120"></div>
-<div class="toolrow"><label for="llmKey" data-i18n="llmKey">API key (local, optional)</label><input type="password" id="llmKey" autocomplete="off" spellcheck="false" maxlength="300" data-i18n-ph="llmKeyPh" placeholder="optional local token"></div>
-<label class="switch"><input type="checkbox" id="llmEnabled"> <span data-i18n="llmEnabled">Enable local AI assessment during analysis</span></label>
-<div class="toolrow">
-<button id="trustSave" type="button" data-i18n="trustSave">Save settings</button>
-<button id="trustTest" type="button" class="ghost" data-i18n="trustTest">Test endpoint</button>
-<button id="trustClear" type="button" class="ghost" data-i18n="trustClear">Remove key</button>
-<span id="trustMsg" class="summary" role="status"></span>
-</div>
-<p class="hint" id="trustState" data-i18n="trustState">Server status: checking…</p>
+<div id="paneCase" role="tabpanel" aria-labelledby="tabCase" hidden>
+<h3 data-i18n="caseH">Case file & chain of custody</h3>
+<p class="hint" data-i18n="caseHint">Objective, scope, evidence inventory, handoff log, timeline, assessment, response, screenshots and team assignment. All records are evidence-backed and re-signed.</p>
+<div id="caseOut"></div>
 </div>
 <div id="paneAdmin" role="tabpanel" aria-labelledby="tabAdmin" hidden>
 <h3 data-i18n="adminH">Administration</h3>

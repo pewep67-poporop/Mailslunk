@@ -73,5 +73,11 @@ python tools/build_submission.py <case_id> ./submission_<case_id>
 python tools/autopsy_handoff.py <case_id> ./autopsy_<case_id>
 ```
 
-## 6. Kết luận
+## 6. Dashboard / giao diện (cập nhật bổ sung)
+- Tab **Case file** thay tab Local AI cũ: xem meta/inventory/custody/timeline/assessment/response/screenshot/team qua API `/api/case/{id}/forensic/{kind}`.
+- Dashboard thêm card **Findings** và **Relations**.
+- Tab Results/Graph thêm bộ lọc quan hệ + danh sách cạnh có `evidence` + link tải `relations.csv`.
+- Guide/DNS hint đã sửa để phản ánh chế độ offline (không `LIVE_DNS`, không AI cloud).
+
+## 7. Kết luận
 Hệ thống đã đáp ứng toàn bộ mã yêu cầu E1.1–E3.3, N1–N6, L1–L3 theo tiêu chuẩn đã chốt; mọi phát hiện đều truy được về chứng cứ gốc và được ký SHA-256 gắn phiên người dùng. Không có kết nối mạng trong toàn bộ luồng phân tích và xuất báo cáo.
