@@ -47,6 +47,30 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 Mở `http://127.0.0.1:8000`. (Chạy song song bản Node ở cổng khác nếu cần; `DATA_DIR` phải tách biệt.)
 
+### 1.5 Python 3.14 & ghi chú Linux
+
+**Python 3.14:** `requirements.txt` đã có nhánh `python_version >= "3.13"` (FastAPI ≥0.120 dùng `lifespan`, Pydantic ≥2.12, Pillow ≥11.3, bcrypt ≥5). Mã nguồn không dùng module bị loại bỏ ở 3.13/3.14 (`imghdr`, `cgi`, `distutils`, `telnetlib`, `on_event`). Tuy nhiên **chưa chạy smoke thực tế trên 3.14** — khuyến nghị tạo venv riêng và chạy lại 8 bộ test trước khi đưa vào production:
+
+```bash
+python3.14 -m venv .venv314
+. .venv314/bin/activate
+pip install -r requirements.txt
+python -m pip check
+python tests/test_rules.py && python tests/test_forensic_api.py && python tests/test_report_forensic.py
+```
+
+Lưu ý: `maxminddb` (dependency của `geoip2`) có phần mở rộng C. Nếu wheel cho 3.14 chưa có, pip sẽ build từ source → cần `build-essential`/`python3.14-dev`. Nếu gặp lỗi, dùng Python 3.12/3.13 (đã test) thay vì ép 3.14.
+
+**Linux:**
+- Cài font Unicode cho PDF/m bản đồ: `sudo apt-get install -y fonts-dejavu-core` (hoặc `dejavu-sans-fonts` trên RHEL). `report.py` tìm `/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf` và `DejaVuSans-Bold.ttf`; nếu thiếu, PDF rơi về Helvetica (mất dấu tiếng Việt). Có thể copy font vào `app/assets/DejaVuSans.ttf` làm fallback.
+- Đặt locale UTF-8: `export LANG=C.UTF-8 LC_ALL=C.UTF-8` để tránh lỗi khi đọc/ghi tên file và báo cáo tiếng Việt.
+- Trong `.env` dùng **đường dẫn tuyệt đối**: `DATA_DIR=/var/lib/mailsleuth/data`, `GEOIP_DIR=/opt/mailsleuth/geoip` (file `GeoLite2-*.mmdb` phải có). Tạo thư mục và cấp quyền ghi cho user chạy service; `evidence/*.bin` được chmod 0444, `quarantine/` chỉ đọc.
+- Chạy bằng user chuyên dụng, **không chạy bằng root**; bind `127.0.0.1`, đặt nginx/Apachereverse proxy nếu cần truy cập từ xa.
+- Khi chạy HTTPS: `COOKIE_SECURE=1`, `TRUST_PROXY=1`; nếu cookie Secure mà vẫn dùng HTTP thì không đăng nhập được.
+- PST/OST: `tools/pst_extract.py` trên Linux cần `pypff`/`libpff` cài riêng (không nằm trong requirements). Nếu không có, dùng `python tools/autopsy_handoff.py <case_id> <dir>` để giao cho Autopsy/FTK Imager.
+- Kiểm tra sau cài đặt: `node --check public/app.js` (tùy chọn), `python -m py_compile` toàn bộ `app/ analysis/ tools/ tests/`, rồi chạy 8 bộ test như mục 8.
+
+
 ---
 
 ## 2. Sơ đồ kiến trúc hệ thống
