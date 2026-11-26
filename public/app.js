@@ -65,7 +65,7 @@ en: {
   noFile: 'Choose at least one file.', uploadErrors: 'Some files could not be analyzed',
   analysisControls: 'Analysis controls', liveTitle: 'Analysis', liveFile: 'File', liveStage: 'Stage', liveDetail: 'Detail',
   resultsH: 'Analysis results', resOverview: 'Overview', resMessages: 'Headers & body', resUrls: 'URLs by target',
-  resGraph: 'Entity graph', repHtml: 'Report HTML', repPdf: 'Report PDF', repCsv: 'Report CSV',
+  resGraph: 'Entity graph', resTimeline: 'Timeline', repHtml: 'Report HTML', repPdf: 'Report PDF', repCsv: 'Report CSV',
   repBundle: 'Export bundle…', repVerify: 'Verify signature', urlCsv: 'Export URL CSV',
   urlImport: 'Import URL CSV/JSON/XML/TXT', urlImportDir: 'Import folder', graphBtn: 'Entity graph',
   noResult: 'No result yet — run an analysis first.', caseLabel: 'Case', score: 'Score', verdict: 'Verdict',
@@ -205,7 +205,7 @@ vi: {
   noFile: 'Hãy chọn ít nhất một tệp.', uploadErrors: 'Một số tệp không phân tích được',
   analysisControls: 'Điều khiển phân tích', liveTitle: 'Phân tích', liveFile: 'Tệp', liveStage: 'Bước', liveDetail: 'Chi tiết',
   resultsH: 'Kết quả phân tích', resOverview: 'Tổng quan', resMessages: 'Header & nội dung', resUrls: 'URL theo target',
-  resGraph: 'Sơ đồ liên kết', repHtml: 'Báo cáo HTML', repPdf: 'Báo cáo PDF', repCsv: 'Báo cáo CSV',
+  resGraph: 'Sơ đồ liên kết', repHtml: 'Báo cáo HTML', repPdf: 'Báo cáo PDF', repCsv: 'Báo cáo CSV', resTimeline: 'Timeline',
   repBundle: 'Xuất trọn gói…', repVerify: 'Kiểm tra chữ ký', urlCsv: 'Xuất CSV URL',
   urlImport: 'Nhập URL CSV/JSON/XML/TXT', urlImportDir: 'Nhập thư mục', graphBtn: 'Sơ đồ liên kết',
   noResult: 'Chưa có kết quả — hãy phân tích trước.', caseLabel: 'Vụ việc', score: 'Điểm', verdict: 'Kết luận',
@@ -1096,7 +1096,7 @@ function renderCurrentResult() {
   out.append(strip);
 
   const tabs = el('div', 'subtabs');
-  for (const [key, label] of [['overview', t('resOverview')], ['messages', t('resMessages')], ['urls', t('resUrls')], ['graph', t('resGraph')]]) {
+  for (const [key, label] of [['overview', t('resOverview')], ['messages', t('resMessages')], ['urls', t('resUrls')], ['graph', t('resGraph')], ['timeline', t('resTimeline')]]) {
     const b = el('button', 'subtab' + (resTab === key ? ' active' : ''), label);
     b.type = 'button';
     b.onclick = () => { resTab = key; renderCurrentResult(); };
@@ -1108,6 +1108,7 @@ function renderCurrentResult() {
   if (resTab === 'messages') renderMessages(body, r);
   else if (resTab === 'urls') renderUrls(body, r);
   else if (resTab === 'graph') renderGraph(body, r);
+  else if (resTab === 'timeline') renderTimeline(body, r);
   else renderOverview(body, r);
 }
 
@@ -1544,6 +1545,28 @@ async function renderCasePane() {
       out.append(box);
     } catch (e) { out.append(el('p', 'hint', k + ': ' + e.message)); }
   }
+}
+
+function renderTimeline(out, r) {
+  const vi = lang === 'vi';
+  const events = r.timeline_events || [];
+  out.append(el('h4', '', vi ? 'Timeline từ dữ liệu email (Date / Received)' : 'Timeline from email data (Date / Received)'));
+  if (!events.length) { out.append(el('p', 'hint', t('noResult'))); return; }
+  const table = el('table');
+  const thead = el('thead'); const hr = el('tr');
+  for (const k of ['ts', 'source_field', 'msg_index', 'event', 'confidence']) hr.append(el('th', '', k));
+  thead.append(hr); table.append(thead);
+  const tb = el('tbody');
+  for (const e of events) {
+    const tr = el('tr');
+    for (const k of ['ts', 'source_field', 'msg_index', 'event', 'confidence']) {
+      let v = e[k] ?? '';
+      if (k === 'msg_index' && typeof v === 'number') v = v + 1;
+      tr.append(el('td', '', String(v)));
+    }
+    tb.append(tr);
+  }
+  table.append(tb); out.append(table);
 }
 
 async function renderGraph(out, r) {

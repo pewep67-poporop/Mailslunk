@@ -824,6 +824,11 @@ def _analyze_one(fname: str, raw: bytes, user: str, src_path: str = None,
     except Exception:
         result["relations"] = {"relations": [], "count": 0, "byKind": {}}
     try:
+        from .timeline import build as build_timeline
+        result["timeline_events"] = build_timeline(result)
+    except Exception:
+        result["timeline_events"] = []
+    try:
         result["graph"] = entity_graph.summary(result)
     except Exception:
         result["graph"] = {"nodes": 0, "edges": 0, "byKind": {}, "truncated": False}
@@ -1320,6 +1325,10 @@ async def forensic_get(case_id: str, kind: str, request: Request):
         rows = con.execute(f"SELECT * FROM {table} WHERE case_id=? ORDER BY id", (case_id,)).fetchall()
         out = [dict(r) for r in rows]
     con.close()
+    # Timeline tự sinh từ Date/Received của dataset (không cần user nhập).
+    if kind == "timeline" and not out:
+        _, result = _case_for(s, case_id)
+        out = result.get("timeline_events") or []
     return {"caseId": case_id, "kind": kind, "data": out}
 
 

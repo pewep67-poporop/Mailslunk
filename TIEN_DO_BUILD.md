@@ -63,5 +63,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 - 2026-11-26: fix rate analyze streaming: limit 80→1200 (`RATE_ANALYZE_STREAM`), `Retry-After:60`, client tự retry 429; docs/.env cập nhật.
 - 2026-11-26: **fix regression** — GATE 0.5 đã xóa nhầm endpoint `/api/report/*` và `/api/admin/*`; khôi phục từ `5be0e15`; nâng `PICK_TOTAL_MAX` 2000→30000 và render list tối đa 200 dòng.
 - 2026-11-26: kiểm tra thực tế server `192.168.65.131:8000` với dataset `extracted_mail` (15029 file): server đang chạy code cũ/trung gian (`PICK_TOTAL_MAX=2000`, rate 80, report/admin 404); đã ghi nhận.
+- 2026-11-26: thêm `app/timeline.py` — tự ghi mốc quá khứ từ `Date` + `Received` vào `result.timeline_events`; API forensic/timeline fallback; sub-tab Results/Timeline; báo cáo dùng event tự sinh. `tests/test_timeline.py` 2/2 OK.
 
-**Next action:** commit/push; yêu cầu deploy HEAD lên server rồi test lại.
+**Next action:** commit/push; deploy HEAD lên server rồi test lại.

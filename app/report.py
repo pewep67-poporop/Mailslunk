@@ -205,15 +205,22 @@ def _flatten_dns(result: dict):
 def _forensic_blocks(result: dict, lang: str, L: dict) -> dict:
     """Các mục bổ sung cho báo cáo forensic (không suy đoán khi thiếu dữ liệu)."""
     rt = result.get("routing") or {}
+    auto = result.get("timeline_events") or []
     timeline = []
-    for h in (rt.get("hops") or [])[:40]:
-        if h.get("ts"):
-            timeline.append([h["ts"], f"Received hop #{h.get('idx')}",
-                             f"{h.get('from') or '-'} by {h.get('by') or '-'}",
-                             f"{h.get('delayMs')} ms" if h.get("delayMs") is not None else "-",
-                             L["observed"]])
+    for e in auto[:80]:
+        timeline.append([e.get("ts") or "-",
+                         f"{e.get('source_field') or '-'}#{e.get('msg_index', -1) + 1 if isinstance(e.get('msg_index'), int) and e.get('msg_index', -1) >= 0 else '-'}",
+                         e.get("event") or "-", e.get("note") or "-",
+                         e.get("confidence") or L["unverified"]])
     if not timeline:
-        timeline = [["-", "-", "No timestamp in Received headers", "-", L["unverified"]]]
+        for h in (rt.get("hops") or [])[:40]:
+            if h.get("ts"):
+                timeline.append([h["ts"], f"Received hop #{h.get('idx')}",
+                                 f"{h.get('from') or '-'} by {h.get('by') or '-'}",
+                                 f"{h.get('delayMs')} ms" if h.get("delayMs") is not None else "-",
+                                 L["observed"]])
+    if not timeline:
+        timeline = [["-", "-", "No timestamp in Date/Received headers", "-", L["unverified"]]]
 
     findings = result.get("findings") or []
     rels = (result.get("relations") or {}).get("relations") or []
