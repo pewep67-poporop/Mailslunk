@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "note": "Indicator dữ liệu xác định, có unit test. Không chấm điểm theo cảm tính/thương hiệu.",
+  "url": {
+    "risky_tld": ["zip", "mov", "top", "xyz", "gq", "tk", "ml", "cf", "click", "country", "work"],
+    "shorteners": ["bit.ly", "t.co", "goo.gl", "tinyurl.com", "is.gd", "ow.ly", "cutt.ly"],
+    "executable_ext": [".exe", ".scr", ".js", ".vbs", ".ps1", ".bat", ".cmd", ".msi", ".jar", ".apk", ".hta"],
+    "credential_tokens": ["login", "signin", "verify", "account", "password", "otp", "recover", "unlock"],
+    "active_schemes": ["javascript", "data"],
+    "traversal_tokens": ["../", "%2e%2e", "%00"]
+  },
+  "content": {
+    "pdf_keys": ["/javascript", "/js", "/openaction", "/launch", "/embeddedfile", "/richmedia", "/xfa"],
+    "rtf_tokens": ["\\objdata", "\\objocx", "\\objupdate", "\\objhtml", "equation.3"],
+    "html_active_tags": ["script", "iframe", "object", "embed", "form"],
+    "script_tokens": ["powershell", "encodedcommand", "frombase64string", "invoke-expression", "invoke-webrequest", "certutil", "bitsadmin", "mshta", "rundll32", "regsvr32", "wscript", "cscript"]
+  },
+  "weights": {
+    "url_raw_ip": 55, "url_punycode": 35, "url_http": 5, "url_userinfo": 25,
+    "url_risky_tld": 15, "url_exec_ext": 45, "url_credential_token": 15,
+    "url_active_scheme": 55, "url_traversal": 30, "url_shortener": 20,
+    "url_long": 10, "url_html_form": 20
+  }
+}
