@@ -1355,6 +1355,20 @@ def _global_index():
                           "originIPs": arr("ips")}],
             "urls": [], "attachments": []}})
     idx = load_index(parsed)
+    # Bổ sung nhóm URL/hash bằng SQL riêng (không parse lại trong Python).
+    con = connect()
+    try:
+        urls = con.execute(
+            "SELECT COUNT(DISTINCT lower(json_extract(u.value,'$.host'))) AS n "
+            "FROM cases c, json_each(c.result, '$.urls') u WHERE json_valid(c.result)").fetchone()
+        atts = con.execute(
+            "SELECT COUNT(DISTINCT json_extract(a.value,'$.sha256')) AS n "
+            "FROM cases c, json_each(c.result, '$.attachments') a WHERE json_valid(c.result)").fetchone()
+        idx["urls"] = {"__count__": int(urls["n"] if urls and urls["n"] else 0)}
+        idx["hashes"] = {"__count__": int(atts["n"] if atts and atts["n"] else 0)}
+    except Exception:
+        pass
+    con.close()
     _GLOBAL_CACHE["index"] = idx
     _GLOBAL_CACHE["ts"] = _t.time()
     return idx
@@ -1406,8 +1420,8 @@ async def global_index(request: Request, q: str = "", kind: str = "",
     lim = max(1, min(int(limit or 50), 200))
     items = rows[off:off + lim]
     groups = {"actors": len(idx["actors"]), "domains": len(idx["domains"]),
-              "ips": len(idx["ips"]), "urls": len(idx["urls"]),
-              "attachments": len(idx["hashes"]), "messages": len(idx["messages"])}
+              "ips": len(idx["ips"]), "urls": len(idx["urls"]) if "__count__" not in idx["urls"] else idx["urls"]["__count__"],
+              "attachments": len(idx["hashes"]) if "__count__" not in idx["hashes"] else idx["hashes"]["__count__"], "messages": len(idx["messages"])}
     return {"total": total, "offset": off, "limit": lim, "items": items, "groups": groups}
 
 
