@@ -2471,6 +2471,6 @@ Object.assign(I18N.vi, {  relH: 'Quan h? ch?ng c? toan h? th?ng', relHint: 'Tat 
 
 });
 
-$('relGo').onclick = () => { loadRelations(); loadRelIndex(($('relQ')?.value||'').trim()); };
+$('relGo').onclick = () => { loadRelIndex(($('relQ')?.value||'').trim()); };
 $('relAll').onclick = () => { $('relQ').value = ''; loadRelations(); loadRelIndex(); };
 $('relCsv').onclick = () => { window.location.href = '/api/graph/global?csv_out=1'; };
