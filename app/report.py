@@ -313,8 +313,14 @@ def render_report(row: dict, result: dict, lang: str = "en", integrity: bool = T
         url_html += (f'<h4>{esc(L["target"])}: #{g["index"] + 1 if g["index"] is not None else "-"} '
                      f'{esc(g["subject"])} <span class="muted">({esc(g["from"])})</span></h4>'
                      + _table(["URL", "Host", L["risk"], L["verdict"], L["reasons"]], rows))
-    att_rows = [[a.get("name"), f"{a.get('size')} B", a.get("magic"), a.get("sha256"),
-                 a.get("verdict"), "; ".join(a.get("reasons") or [])] for a in atts[:150]]
+    att_rows = []
+    for a in atts[:150]:
+        eng = ", ".join(a.get("scanEngines") or [])
+        reasons = "; ".join(a.get("reasons") or [])
+        if eng:
+            reasons = (f"[scan: {eng}] " + reasons).strip()
+        att_rows.append([a.get("name"), f"{a.get('size')} B", a.get("magic"), a.get("sha256"),
+                         a.get("verdict"), reasons])
     att_html = _table([L["file"], L["size"], L["type"], L["hash"], L["verdict"], L["reasons"]], att_rows)
     find_rows = [[f.get("id"), f.get("type"), f.get("severity"), f.get("evidence")]
                  for f in findings[:500]]
@@ -655,8 +661,9 @@ def render_pdf(row: dict, result: dict, lang: str = "en", sig: str = "", map_png
                    for u in g["urls"][:40]], [105, 35, 18, 24])
     pdf.section("9. " + L["attachments"])
     pdf.table([L["file"], L["size"], L["hash"], L["verdict"]],
-              [[a.get("name"), f"{a.get('size')} B", a.get("sha256"), a.get("verdict")]
-               for a in (result.get("attachments") or [])[:100]], [50, 18, 90, 24])
+              [[a.get("name"), f"{a.get('size')} B", a.get("sha256"),
+                (a.get("verdict") or "") + ((" [" + ", ".join(a.get("scanEngines") or []) + "]") if a.get("scanEngines") else "")]
+               for a in (result.get("attachments") or [])[:100]], [50, 18, 86, 28])
     pdf.section("10. " + L["signature"])
     pdf.set_font(pdf._family, "", 7)
     pdf.multi_cell(0, 4, sig, new_x="LMARGIN", new_y="NEXT")

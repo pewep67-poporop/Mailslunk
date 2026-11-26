@@ -106,6 +106,7 @@ flowchart LR
 | Phân quyền & chống leo thang ngang/dọc, CSRF, tab Admin chỉ admin | Hoàn thành | RBAC, `cases.uid` ownership, guard self-demote/disable |
 | Local AI (endpoint local, chặn cloud) | Hoàn thành | `llm.py`, `/api/settings/llm`, `LLM_ALLOW_REMOTE=0` |
 | UI: 9 tab, Results/Messages/URLs/Graph, Guide, dark, cảnh báo viền, Win/Linux, export/import picker | Hoàn thành | `public/index.html`, `app.js`, `app.css` |
+| Quét nội dung độc hại offline/local (heuristic + YARA/ClamAV/sandbox, không Internet) | Hoàn thành | `threatscan.py`, `attachments.py`, `rules/yara/default.yar`, `.env.example` (`THREATSCAN_*`/`YARA_*`/`CLAMSCAN_CLI`/`SANDBOX_URL`) |
 | An toàn bổ sung | Hoàn thành | CSV formula-safe, CSP/nosniff/no-referrer/no-store, body sanitize+sandbox |
 
 ---
@@ -120,9 +121,7 @@ flowchart LR
 ## 6. Hạng mục còn mở/đề xuất tiếp theo
 
 - **Kiểm thử UI tự động E2E** ổn định hơn cho streaming/picker/graph trên môi trường CI/headless.
-- **Xử lý nội dung độc hại nâng cao (2 hướng kết hợp):**
-  1. Tích hợp tool ngoài local/sandbox (YARA CLI, ClamAV/clamdscan, sandbox tách biệt) qua adapter có timeout/giới hạn, không gửi dữ liệu ra Internet.
-  2. Mở rộng thư viện Python offline (`yara-python` + rule local, oletools/pdfid/entropy/magic/hash đã có nền tảng) làm lớp mặc định luôn bật.
+- **Xử lý nội dung độc hại (đã triển khai, 2 hướng kết hợp, offline-safe):** lớp mặc định heuristic Python + `yara-python`/rule cục bộ (`rules/yara/*.yar`) khi có; lớp tăng cường tùy chọn qua adapter local có timeout/giới hạn dung lượng (YARA CLI, ClamAV/clamdscan, sandbox HTTP chỉ localhost/private, **không gửi dữ liệu ra Internet**). Kết quả chuẩn hóa vào findings/IOC/verdict; tệp nguy hiểm được cách ly/quarantine. Có thể tiếp tục mở rộng bộ rule/heuristic và kiểm thử E2E theo nhu cầu.
 - **Đối chiếu “mẫu báo cáo chuẩn” cụ thể** của đơn vị (nếu có template bắt buộc) để tinh chỉnh bố cục/trường.
 - **Rà soát phụ thuộc định kỳ** (pip-audit/pinning) và hardening triển khai (HTTPS, reverse proxy, sao lưu/vệ sinh).
 

@@ -1,10 +1,13 @@
-"""M5 — Malware Attachment Analysis.
+"""M5 - Malware Attachment Analysis.
 
 Walks MIME parts of the raw evidence (EML/MBOX, basic .msg support), hashes every
 attachment, compares declared MIME against magic bytes, measures entropy, checks
 archives (zip bomb / nesting), Office VBA macros (oletools), PDF active content,
 double extensions and the EICAR test string. Findings ids are prefixed A-.
-Reputation (VT hash-lookup / MalwareBazaar) is stubbed for the key-management phase.
+Threat/content scan (local, offline-safe): heuristics + optional yara-python/local
+YARA rules + optional local external tools (YARA CLI, ClamAV, sandbox endpoint)
+with strict time/size limits. Reputation (VT hash-lookup / MalwareBazaar) is
+stubbed for the key-management phase.
 """
 import io, re, math, hashlib, zipfile
 from email import policy
@@ -22,6 +25,13 @@ OFFICE_EXT = (".doc", ".xls", ".ppt", ".docm", ".xlsm", ".pptm", ".dot", ".xla")
 MEDIA_DECL = ("image/", "audio/", "video/")
 MAX_ATT = 200
 MAX_INLINE = 25 * 1024 * 1024
+
+# Offline/local content scan (heuristics + optional yara-python/CLI/ClamAV/sandbox)
+THREAT_SCAN = None
+try:
+    from . import threatscan as THREAT_SCAN
+except Exception:
+    THREAT_SCAN = None
 
 
 def entropy(data: bytes) -> float:
@@ -162,6 +172,30 @@ def extract(name: str, raw: bytes, quarantine: bool = True, user: str = "") -> l
              "magic": magic, "entropy": round(entropy(data), 2), "sha256": sha,
              "md5": hashlib.md5(data).hexdigest(), "sha1": hashlib.sha1(data).hexdigest(),
              "verdict": verdict, "reasons": reasons, "weight": weight, "sev": sev}
+        # Offline/local threat scan (heuristics + optional YARA/ClamAV/sandbox)
+        scan = {"findings": [], "matches": [], "engines": []}
+        if THREAT_SCAN is not None:
+            try:
+                scan = THREAT_SCAN.scan_attachment(fn, data, sha) or scan
+            except Exception:
+                scan = {"findings": [], "matches": [], "engines": []}
+        if scan.get("engines"):
+            a["scanEngines"] = scan.get("engines") or []
+        if scan.get("matches"):
+            a["scanMatches"] = scan.get("matches") or []
+        for sf in (scan.get("findings") or []):
+            reason = str(sf.get("reason") or "").strip()
+            if reason and reason not in a["reasons"]:
+                a["reasons"].append(reason)
+            a["weight"] = max(int(a.get("weight") or 0), int(sf.get("weight") or 0))
+            a["sev"] = max(int(a.get("sev") or 0), int(sf.get("sev") or 0))
+            v = str(sf.get("verdict") or "")
+            if v == "malicious" or a["sev"] >= 3:
+                a["verdict"] = "malicious"
+            elif v == "suspicious" and a.get("verdict") != "malicious":
+                a["verdict"] = "suspicious"
+            elif a["reasons"] and a.get("verdict") == "clean":
+                a["verdict"] = "suspicious" if a["sev"] >= 2 else "clean"
         if rep_on:
             try:
                 rep = reputation.check_hash(sha, user)
@@ -176,7 +210,7 @@ def extract(name: str, raw: bytes, quarantine: bool = True, user: str = "") -> l
                 a["sev"] = 3
                 a["weight"] = max(int(a["weight"] or 0), 30)
         out.append(a)
-        if quarantine and verdict != "clean":
+        if quarantine and a.get("verdict") != "clean":
             _quarantine(sha, fn, data)
     return out
 

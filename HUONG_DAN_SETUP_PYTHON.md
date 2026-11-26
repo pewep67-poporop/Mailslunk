@@ -202,6 +202,12 @@ Chữ ký là **fingerprint toàn vẹn** (deterministic) để kiểm tra dữ 
 | `LLM_BASE_URL` | http://127.0.0.1:11434/v1 | Endpoint OpenAI-compatible cục bộ |
 | `LLM_MODEL` | qwen2.5:7b | Mẫu gợi ý |
 | `LLM_ALLOW_REMOTE` | 0 | `0` từ chối endpoint không phải loopback/private |
+| `THREATSCAN_ENABLED` | 1 | Bật quét nội dung độc hại offline (heuristic + engine local nếu có) |
+| `THREATSCAN_TIMEOUT` | 15 | Timeout (giây) cho engine/tool quét |
+| `THREATSCAN_MAX_BYTES` | 26214400 | Giới hạn byte quét mỗi tệp đính kèm |
+| `YARA_RULES_DIR` | ./rules/yara | Thư mục rule YARA cục bộ |
+| `YARA_CLI` / `CLAMSCAN_CLI` | (rỗng) | Đường dẫn YARA/ClamAV tùy chọn (auto-detect nếu rỗng) |
+| `SANDBOX_URL` | (rỗng) | Adapter sandbox cục bộ (chỉ localhost/private) |
 | `BODY_MAX_BYTES` | 524288 | Giới hạn body mỗi thư (byte) |
 | `BODY_TOTAL_BYTES` | 33554432 | Ngân sách body mỗi vụ việc |
 | `AVATAR_RATE_MAX` | 20 | Giới hạn đổi avatar/IP/phút |
@@ -280,6 +286,7 @@ Khuyến nghị kiểm thử thủ công trên UI: streaming + Pause/Stop/Cancel
 - **Toàn vẹn & hiển thị an toàn**: chữ ký SHA-256 + con dấu; CSP `default-src 'none'`, `nosniff`, `no-referrer`, `no-store` cho báo cáo; HTML body được sanitize và render trong sandbox; CSV xuất được trung hòa công thức.
 - **Bản đồ**: lược đồ nội bộ từ tọa độ GeoIP — mang tính hỗ trợ định vị tương đối, không phải bản đồ đường phố/tọa độ chính xác tuyệt đối.
 - **Verdict/điểm**: rule-based (điểm an toàn, cao = ít rủi ro); ML/LLM (nếu bật) chỉ bổ trợ theo ràng buộc, không ghi đè/không suy diễn danh tính.
+- **Quét nội dung độc hại (offline/local)**: lớp mặc định heuristic Python + `yara-python`/rule cục bộ (`rules/yara/*.yar`) khi có; lớp tăng cường tùy chọn qua adapter local có timeout/giới hạn (YARA CLI, ClamAV/clamdscan, sandbox HTTP chỉ localhost/private, không gửi dữ liệu ra Internet); kết quả chuẩn hóa vào findings/IOC/verdict, tệp nguy hiểm được cách ly/quarantine.
 
 ---
 

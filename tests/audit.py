@@ -54,7 +54,7 @@ for name in ("app.js", "index.html", "app.css"):
 print(f"  app/*.py: {len(py)} module, {loc} dòng | public/*: {ui} dòng")
 ok("module lõi đủ", all(m in py for m in ("main.py", "parsers.py", "bodies.py", "attachments.py",
    "authcheck.py", "headers.py", "routing.py", "urls.py", "ioc.py", "siem.py", "enrichment.py",
-   "dns_real.py", "db.py", "auth.py", "report.py", "mapgen.py", "graph.py", "urlintel.py")))
+   "dns_real.py", "db.py", "auth.py", "report.py", "mapgen.py", "graph.py", "urlintel.py", "threatscan.py")))
 req_txt = open(os.path.join(ROOT, "requirements.txt"), encoding="utf-8").read().lower()
 needed = ["fastapi", "uvicorn", "bcrypt", "dnspython", "pyspf", "dkimpy", "geoip2", "oletools",
           "extract-msg", "python-multipart", "olefile", "requests"]

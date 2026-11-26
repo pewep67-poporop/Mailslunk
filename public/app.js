@@ -1135,9 +1135,17 @@ function renderOverview(out, r) {
     const ul = el('ul', 'att');
     for (const a of r.attachments.slice(0, 200)) {
       const li = el('li', '', `${a.m !== undefined ? '#' + (a.m + 1) + ' ' : ''}${a.name} — ${a.size} B — ${a.sha256}${a.magic && a.magic !== 'unknown' ? ' — ' + a.magic : ''}`);
+      if (a.scanEngines?.length) {
+        li.append(' - ', badge('scan: ' + a.scanEngines.join(', '), a.verdict === 'malicious' ? 'bad' : a.verdict === 'suspicious' ? 'warn' : ''));
+      }
       if (a.verdict && a.verdict !== 'clean') {
-        li.append(' — ', badge(assessText(a.verdict), a.verdict === 'malicious' ? 'bad' : 'warn'));
-        if (a.reasons?.length) li.title = a.reasons.join('; ');
+        li.append(' - ', badge(assessText(a.verdict), a.verdict === 'malicious' ? 'bad' : 'warn'));
+        const tip = [];
+        if (a.reasons?.length) tip.push(a.reasons.join('; '));
+        if (a.scanMatches?.length) tip.push(a.scanMatches.map(m => (m.engine || '') + ':' + (m.rule || m.description || '')).join('; '));
+        if (tip.length) li.title = tip.join(' | ');
+      } else if (a.scanMatches?.length) {
+        li.title = a.scanMatches.map(m => (m.engine || '') + ':' + (m.rule || m.description || '')).join('; ');
       }
       ul.append(li);
     }

@@ -7,7 +7,7 @@ MailSleuth Python là bản **FastAPI** để phân tích/pháp chứng email (s
 ## Tính năng chính
 
 - **Định dạng nhập**: `.eml`, `.emlx`, `.mht/.mhtml`, `.msg`, `.mbox/.mbx`, `.txt` và cây thư mục **Maildir** (phát hiện theo nội dung, kể cả file không phần mở rộng). `PST/OST` **không** được phân tích trực tiếp trên server: điều tra viên trích xuất ra EML/MBOX/Maildir bằng công cụ ngoài (readpst/Outlook) rồi nạp vào hệ thống.
-- **Phân tích pháp chứng**: header (H-*), xác thực SPF/DKIM/DMARC & alignment (A-*), tái dựng định tuyến Received/hop (R-*), URL/phishing (U-*), tệp đính kèm/mã độc/hoạt động nguy hiểm & cách ly (A-*), IOC, điểm & verdict.
+- **Phân tích pháp chứng**: header (H-*), xác thực SPF/DKIM/DMARC & alignment (A-*), tái dựng định tuyến Received/hop (R-*), URL/phishing (U-*), tệp đính kèm/nội dung độc hại & cách ly (A-*), IOC, điểm & verdict. Quét nội dung độc hại **offline/local** (mặc định): heuristic Python + rule YARA cục bộ (`rules/yara/*.yar`, `yara-python` nếu cài); tăng cường tùy chọn: YARA CLI, ClamAV/clamdscan, sandbox HTTP chỉ **localhost/private** (timeout/giới hạn, không gửi dữ liệu ra Internet).
 - **Streaming từng tệp** (`POST /api/analyze/stream`, NDJSON): tiến độ theo giai đoạn thực, hiển thị 3 dòng trạng thái + thanh biên độ + %, **Pause** (dừng sau tệp hiện tại), **Stop** (dừng lô nhưng giữ kết quả đã xong), **Cancel** (hủy và bỏ kết quả lô); lỗi dừng đúng tệp/vị trí và báo rõ.
 - **Nền tảng & client**: nhận diện/ghi nhận nền tảng Windows/Linux (chọn hoặc auto) và client/nguồn (Outlook, Exchange, Thunderbird, Apple Mail, Gmail, Maildir, mbox, RFC822/EML...).
 - **Báo cáo & toàn vẹn**: HTML/PDF/CSV/JSON theo ngôn ngữ `en/vi`; thống kê IP, DNS, SPF/DKIM/DMARC, routing, URL, IOC, đính kèm, đồ thị; **chữ ký SHA-256** trên dữ liệu vụ việc (fingerprint tái lập được) + **mộc số/con dấu** góc dưới bên phải; xác minh `GET /api/report/{id}/verify`. CSV trung hòa công thức (chống CSV injection).
@@ -119,6 +119,12 @@ Xem đầy đủ trong `.env.example`.
 | `LLM_ENABLED` | 0 | Bật Local AI (per-user cấu hình trong UI/kv) |
 | `LLM_BASE_URL` | http://127.0.0.1:11434/v1 | Endpoint local OpenAI-compatible |
 | `LLM_ALLOW_REMOTE` | 0 | `0` chặn endpoint không phải localhost/private |
+| `THREATSCAN_ENABLED` | 1 | Bật quét nội dung độc hại offline (heuristic + engine local nếu có) |
+| `THREATSCAN_TIMEOUT` | 15 | Timeout (giây) cho engine/tool quét |
+| `THREATSCAN_MAX_BYTES` | 26214400 | Giới hạn byte quét mỗi tệp đính kèm |
+| `YARA_RULES_DIR` | ./rules/yara | Thư mục rule YARA cục bộ |
+| `YARA_CLI` / `CLAMSCAN_CLI` | (rỗng) | Đường dẫn tool ngoài tùy chọn (auto-detect nếu rỗng) |
+| `SANDBOX_URL` | (rỗng) | Adapter sandbox cục bộ (chỉ localhost/private) |
 | `BODY_MAX_BYTES` / `BODY_TOTAL_BYTES` | 512KB / 32MB | Giới hạn lưu body/thu và/vụ việc |
 
 ## API chính (rút gọn)

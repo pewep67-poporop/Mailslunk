@@ -30,6 +30,12 @@ pyspf==2.0.14
 dkimpy==1.1.0
 oletools==0.60.2
 
+# --- TUY CHON: quet noi dung doc hai nang cao (offline/local) ---
+# Lop mac dinh: heuristic Python + rule YARA cuc bo (rules/yara/*.yar) + yara-python (neu cai).
+# Tang cuong tuy chon (local): YARA CLI / ClamAV (clamdscan/clamscan) / sandbox HTTP localhost/private.
+# Khong gui du lieu ra Internet. Cau hinh: THREATSCAN_* / YARA_* / CLAMSCAN_CLI / SANDBOX_URL.
+# yara-python>=4.5
+
 # --- TÙY CHỌN: tầng ML (chỉ cần khi bật ML_ENABLED=1) ---
 # onnxruntime==1.19.2     # server chỉ cần gói này để chạy model.onnx (khuyến nghị)
 # scikit-learn==1.5.2     # chỉ cần khi TRAIN (máy của bạn / Colab), KHÔNG cần trên server
