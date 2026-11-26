@@ -68,4 +68,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 
 - 2026-11-26: test lô 15029 file xong: dashboard đúng 15029; sửa Overview - card Findings/Relations đếm thật từ DB, auth not_run thêm nhãn "không đủ cơ sở", refresh dashboard khi mở case từ History.
 
+- 2026-11-27: fix rate tạm thời: RATE_ANALYZE_STREAM 1200→6000, RATE_ANALYZE_BATCH 200→2000, client pace 60ms giữa các file (tránh 429/crash tạm thời).
+
 **Next action:** deploy HEAD (`df33e9d` + bản đếm) lên server; kiểm tra dashboard hiện số case thật và report HTML/PDF/CSV.

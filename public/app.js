@@ -740,6 +740,7 @@ let currentIdx = 0;
 const OK_EXT = /\.(eml|emlx|mht|mhtml|msg|mbox|mbx|txt)$/i;
 const PICK_FILE_MAX = 80 * 1024 * 1024;
 const PICK_TOTAL_MAX = 30000;
+const STREAM_PACE_MS = 60;  // ~1000 req/phút; tránh 429 mà vẫn nhanh
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const sleepAbortable = (ms, signal) => new Promise((resolve, reject) => {
   if (signal.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
@@ -954,6 +955,9 @@ async function startAnalysis() {
     for (let i = 0; i < files.length; i++) {
       await waitIfPaused();
       if (!job || job.cancelled || job.stopped) break;
+      // Nhịp giữa các file: giữ tốc độ ổn định (~600-1000 req/phút theo môi trường),
+      // tránh dồn request gây 429 rồi phải chờ/crash tạm thời.
+      if (i && STREAM_PACE_MS > 0) await sleepAbortable(STREAM_PACE_MS, job.ac?.signal || new AbortController().signal);
       const basePct = (i / files.length) * 100;
       try {
         const r = await streamOne(files[i], i, files.length, basePct);

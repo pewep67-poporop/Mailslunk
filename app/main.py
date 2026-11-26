@@ -154,10 +154,11 @@ class RateLimit(BaseHTTPMiddleware):
             "/api/login": (10, f"login:{ip}"),
             "/api/register": (5, f"reg:{ip}"),
             "/api/recover": (5, f"rec:{ip}"),
-            "/api/analyze": (int(os.getenv("RATE_ANALYZE_BATCH", "200") or 200), f"an:{ip}"),
-            # Streaming gửi MỖI file = 1 request; giới hạn cũ (80/phút) chặn
-            # cả lô lớn. Give authenticated batch work room, vẫn có cap.
-            "/api/analyze/stream": (int(os.getenv("RATE_ANALYZE_STREAM", "1200") or 1200), f"ans:{ip}"),
+            "/api/analyze": (int(os.getenv("RATE_ANALYZE_BATCH", "2000") or 2000), f"an:{ip}"),
+            # Streaming gửi MỖI file = 1 request. Lô 15-30k file chạy ~10-20 phút;
+            # giới hạn thấp gây 429 -> client phải chờ/crash tạm thời. Để mức cao
+            # + client pace (xem STREAM_PACE_MS) để vừa nhanh vừa không vượt ngưỡng.
+            "/api/analyze/stream": (int(os.getenv("RATE_ANALYZE_STREAM", "6000") or 6000), f"ans:{ip}"),
             "/api/urls/import": (30, f"ui:{ip}"),
             "/api/ip": (30, f"tool:{ip}"),
             "/api/dns": (30, f"tool:{ip}"),
