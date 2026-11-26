@@ -1388,6 +1388,11 @@ async def forensic_post(case_id: str, kind: str, request: Request):
 # ---------------------------------------------------------------------------
 # Report & Administration (khôi phục từ baseline 5be0e15)
 # ---------------------------------------------------------------------------
+def _safe_name(v: str) -> str:
+    """Tên file an toàn cho header Content-Disposition."""
+    return re.sub(r"[^A-Za-z0-9._-]", "_", v or "case")[:80]
+
+
 def _report_parts(row: dict, result: dict, lang: str):
     """Ảnh bản đồ lược đồ cho báo cáo (local, không tile ngoài)."""
     vals = [x["ip"] for x in (result.get("ipInfo") or []) if x.get("ip")][:15]
