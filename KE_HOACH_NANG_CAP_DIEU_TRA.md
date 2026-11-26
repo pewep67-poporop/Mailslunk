@@ -125,3 +125,8 @@ flowchart LR
 - Quản trị/tài khoản chuyển sang mô hình uid bất biến + PBKDF2 verifier (offline keygen, không lưu CCCD), tăng cường phân quyền/chống leo thang và tab Administration.
 
 *Tài liệu đồng bộ với mã nguồn tại thời điểm cập nhật; xem thêm `README.md` và `HUONG_DAN_SETUP_PYTHON.md`.*
+
+
+## Cập nhật cuối: kế hoạch đã hoàn thành
+G0 → P10 đã build xong. Xem `TIEN_DO_BUILD.md` (tick trạng thái) và
+`BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md` (đối chiếu yêu cầu + kết quả test).

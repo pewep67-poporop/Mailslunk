@@ -152,3 +152,16 @@ Xem hướng dẫn chi tiết: `HUONG_DAN_SETUP_PYTHON.md`. Kế hoạch & trạ
 - SPF/DKIM/DMARC và DNS lịch sử đọc từ `Authentication-Results` trong header, có thể tính lại bằng snapshot local (`pyspf`, `dkimpy`, `dnspython` chế độ `dns.zone`).
 - Mọi thay đổi chứng cứ đều re-sign SHA-256 theo phiên người dùng; export có `case_id + msg_index`.
 - Chi tiết tiêu chuẩn build/test: `TIEN_DO_BUILD.md`.
+
+
+## Trạng thái cuối (đã build 2026-11-26)
+- Forensic offline 100%: không API/MxToolbox/VirusTotal, không SIEM, không DNS live, không AI/ML đổi verdict.
+- `analysis/rules/` + `app/urls.py`, `app/threatscan.py`: rule-driven, có `tests/test_rules.py`.
+- `app/pipeline.py`: điều phối nạp dataset/xuất báo cáo.
+- `app/dns_local.py` + `tools/dns_snapshot.py` + `tools/auth_dns_export.py`: SPF/DKIM/DMARC/DNS từ snapshot/header AR.
+- `tools/verify_dataset.py`: đối chiếu SHA-256 với dataset gốc (exit 0/1).
+- `app/relations.py` + `app/graph.py` + UI Graph: quan hệ message↔message có evidence, hop/GeoIP, filter, xuất CSV/PNG.
+- Schema/API pháp chứng + re-sign SHA-256 theo `uid + session_fp + signed_at`.
+- Báo cáo HTML/PDF: TOC, timeline, 3 nhóm quan sát/suy luận/chưa đủ cơ sở, ứng phó, phụ lục export, seal SHA-256.
+- `tools/autopsy_handoff.py` + `tools/build_submission.py`: gói bàn giao Autopsy và ZIP nộp bài.
+- Chi tiết tiêu chuẩn/test: `TIEN_DO_BUILD.md`, `BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md`.
