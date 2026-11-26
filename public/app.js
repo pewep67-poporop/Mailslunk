@@ -567,8 +567,7 @@ function leaveApp() {
   $('po').value = ''; $('pn').value = ''; $('pmsg').textContent = '';
   $('rnToken').value = ''; $('rnNew').value = ''; $('rnPass').value = ''; $('rnMsg').textContent = '';
   lastDns = null; lastIp = null;
-  $('dnsDomain').value = ''; $('dnsOut').textContent = ''; $('dnsMsg').textContent = '';
-  $('ipAddr').value = ''; $('ipOut').textContent = ''; $('ipMsg').textContent = '';
+  // DNS/IP-Geo đã bỏ khỏi giao diện.
   $('histQ').value = ''; $('histOut').textContent = ''; $('histMsg').textContent = '';
   $('logsOut').textContent = ''; $('sessionsOut').textContent = ''; $('logsMsg').textContent = '';
   $('tabAdmin').hidden = true; $('tabLogs').hidden = true;
@@ -2433,11 +2432,7 @@ $('avatarFile').onchange = uploadAvatar;
 // ---------------------------------------------------------------------------
 // other bindings
 // ---------------------------------------------------------------------------
-$('dnsGo').onclick = lookupDns;
-$('ipGo').onclick = lookupIp;
-$('dnsType').onchange = () => { $('dnsDkimRow').hidden = $('dnsType').value !== 'dkim'; };
-for (const id of ['dnsDomain', 'dnsSelector']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') lookupDns(); });
-$('ipAddr').addEventListener('keydown', e => { if (e.key === 'Enter') lookupIp(); });
+// Tab DNS/IP-Geo đã bỏ; bỏ các binding cũ để không làm hỏng phần còn lại.
 $('histGo').onclick = () => loadHistory(true);
 $('histRefresh').onclick = () => loadHistory(true);
 $('histQ').addEventListener('keydown', e => { if (e.key === 'Enter') loadHistory(true); });
