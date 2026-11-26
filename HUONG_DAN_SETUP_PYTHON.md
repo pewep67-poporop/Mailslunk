@@ -73,7 +73,7 @@ flowchart TB
     U[urlintel.py\nparse CSV/JSON/XML/TXT\nrule local, merge, CSV-safe]
     G[graph.py\nthực thể/cạnh từ chứng cứ]
     M[mapgen.py\nbản đồ lược đồ nội bộ]
-    R[report.py\nHTML/PDF/CSV, seal + case_signature SHA-256]
+    R[report.py\nHTML/PDF/CSV 20 mục, seal + case_signature SHA-256]\n    PIPE[pipeline.py\nđiều phối nạp dataset/xuất]\n    REL[relations.py + graph.py\ncạnh message↔message có evidence]
   end
 
   subgraph Data["DATA_DIR"]
@@ -86,7 +86,7 @@ flowchart TB
 
   subgraph Local["Tài nguyên cục bộ (tùy chọn)"]
     GEO[(GeoLite2 *.mmdb)]
-    DNSR[(DNS resolver khi LIVE_DNS=1)]
+    SNAP[(DNS snapshot local\nzone/JSON do user cấp)]
   end
 
   Client <-->|cookie sid + x-csrf| Server
@@ -94,15 +94,13 @@ flowchart TB
   F --> U --> R
   E --> G --> R
   E --> M
-  L -. optional, local-only .-> F
   Server <--> Modules
   Modules <--> DB
   Modules <--> EV
   Modules <--> MS
   Modules <--> Q
   E --> GEO
-  E -. optional .-> DNSR
-  L -. optional .-> LAI
+  E --> SNAP
 ```
 
 
@@ -144,7 +142,9 @@ flowchart TB
   Inv[Case/Vụ việc\nid, uid sở hữu bất biến, sig SHA-256, platform, lang] --> Msg[Messages\nindex, client/format, from/to/subject/date\nheaders, body ref, originIPs, auth, verdict]
   Msg --> Ent[Entities (trích từ chứng cứ)\nactor/address, domain, ip, url, attachment/hash]
   Ent --> Lnk[Links/Relations\nCONTAINS, SENT, TO/CC/BCC\nUSES_DOMAIN, ORIGIN_IP\nCONTAINS_URL, HAS_ATTACHMENT]
-  Lnk --> Graph[Đồ thị /api/case/{id}/graph(.svg)\nchỉ từ chứng cứ, không suy diễn]
+  Lnk --> Graph[Đồ thị /api/case/{id}/graph(.svg)\ncạnh từ chứng cứ; TIME_NEAR dán nhãn suy luận]
+  Msg --> Rel[app/relations.py\nTHREAD_REPLY / SHARES_* có evidence]
+  Rel --> TL[timeline_events + báo cáo mục Timeline]
   Msg --> Store1[(cases.result JSON trong DB)]
   Msg --> Store2[(messages/<case>/idx.hdr|txt|html|json)]
   Inv --> Store3[(evidence/<case>.bin, read-only)]
@@ -169,7 +169,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  R[case row + result JSON] --> S[case_signature: SHA-256 canonical facts]
+  R[case row + result JSON + uid + SHA-256(sid) + signed_at] --> S[case_signature: SHA-256 canonical facts]
   S --> H[HTML: seal SVG góc dưới phải + CSP chặt]
   S --> P[PDF: vẽ seal]
   S --> C[CSV/JSON theo ngôn ngữ]
@@ -187,8 +187,7 @@ Chữ ký là **fingerprint toàn vẹn** (deterministic) để kiểm tra dữ 
 | `PORT` | 8000 | Cổng lắng nghe |
 | `DATA_DIR` | ./data | Dữ liệu runtime (DB, evidence, messages, quarantine, uploads/tmp/reports) |
 | `GEOIP_DIR` | ../mailsleuth/geoip | GeoLite2 (`GeoLite2-*.mmdb`) |
-| `LIVE_DNS` | 0 | `1` bật tra DNS thật (SPF/DKIM/DMARC/PTR...); `0` offline-safe |
-| `LIVE_DNS_DOMAINS` | 5 | Giới hạn domain tra DNS mỗi lần phân tích |
+| `DNS_SNAPSHOT` | data/dns_snapshot.json | Snapshot DNS local (zone/JSON). Không có → SPF/DKIM/DMARC `not_run` |
 | `GEO_IPS` | 20 | Giới hạn IP tra GeoIP |
 | `COOKIE_SECURE` | 0 | `1` khi chạy HTTPS (Secure cookie) |
 | `TRUST_PROXY` | (rỗng) | `1` khi đứng sau reverse proxy tin cậy |
@@ -208,7 +207,7 @@ Chữ ký là **fingerprint toàn vẹn** (deterministic) để kiểm tra dữ 
 1. **Đăng nhập/Đăng ký**: nhập username, SĐT hoặc user ID. User thường đăng ký có SĐT (tùy chọn), nhận **Key ID khôi phục (một lần)** — cần lưu lại để đặt lại mật khẩu. Có thể khôi phục bằng Key ID và đăng nhập bằng username/SĐT.
 2. **Dashboard & nền tảng**: chọn thẻ **Windows** hoặc **Linux** để đặt ngữ cảnh; Auto-detect vẫn nhận từ tệp. Dashboard hiển thị thống kê vụ việc/thư/mức rủi ro.
 3. **Phân tích (Analysis)**: kéo-thả hoặc chọn tệp/thư mục (`.eml/.msg/.mbox/.emlx/.mht/.mhtml/.txt`, Maildir). Preflight loại tệp không hợp lệ. Nhấn **Analyze** để chạy streaming: 3 dòng (tệp/giai đoạn/chi tiết) + thanh biên độ + %. **Pause** dừng sau tệp hiện tại, **Stop** giữ kết quả đã xong, **Cancel** hủy lượt chạy. Khi xong tự chuyển sang **Results**.
-4. **Kết quả (Results)**: dải nhận diện client/nền tảng; sub-tab **Overview/Messages/URLs/Graph**. Mở từng thư để xem header/body (HTML đã khử nguy hiểm, sandbox). Xuất **Report HTML/PDF/CSV** (theo ngôn ngữ), **Verify signature**, export bundle/URL CSV; **Import URL** (CSV/JSON/XML/TXT, tệp hoặc thư mục) để tái phân tích local và gộp vào vụ việc.
+4. **Kết quả (Results)**: dải nhận diện client/nền tảng; sub-tab **Overview/Messages/URLs/Graph** (Graph có bộ lọc quan hệ). Tab **Case file** xem meta/bảng kê/bàn giao/timeline/đánh giá/kiến nghị/ảnh/phân công. Mở từng thư để xem header/body (HTML đã khử nguy hiểm, sandbox). Xuất **Report HTML/PDF/CSV** (theo ngôn ngữ), **Verify signature**, export bundle/URL CSV; **Import URL** (CSV/JSON/XML/TXT, tệp hoặc thư mục) để tái phân tích local và gộp vào vụ việc.
 5. **History/DNS/IP-Geo**: mở lại vụ việc; tra cứu DNS và IP/Geo (local), xem bản đồ lược đồ nội bộ.
 7. **Guide**: hướng dẫn, ghi chú, lưu ý vận hành.
 8. **Administration/Logs (ADMIN)**: thống kê, tạo tài khoản (analyst/admin; admin cần enroll/verifier theo quy trình), cấp token đổi tên một lần, bật/tắt/quyền (có chặn tự khóa/tự hạ quyền), xem audit & phiên ký.
@@ -274,7 +273,7 @@ Khuyến nghị kiểm thử thủ công trên UI: streaming + Pause/Stop/Cancel
 |---|---|
 | Không đăng nhập admin được | Enroll lại bằng `tools/admin_keygen.py --write-db`; kiểm tra `users.admin_kdf`; `ADMIN_PASS` chỉ là bootstrap dev |
 | Bản đồ trống / `no_location` | IP không có tọa độ trong GeoLite2 hoặc là IP private; kiểm tra `GEOIP_DIR` |
-| Kết quả SPF/DKIM/DMARC là `not_run` | `LIVE_DNS=0` (offline); bật `LIVE_DNS=1` nếu cần tra DNS thật |
+| Kết quả SPF/DKIM/DMARC là `not_run` | Không có snapshot DNS hoặc không có `Authentication-Results` trong EML. Tạo snapshot bằng `python tools/dns_snapshot.py`; không truy DNS live |
 | Body/HTML không hiển thị | Kiểm tra `messages/<case>/` và `evidence/<case>.bin` còn tồn tại; giới hạn `BODY_MAX_BYTES/BODY_TOTAL_BYTES` |
 | Cổng bận | Đổi `--port` hoặc dừng tiến trình uvicorn cũ |
 

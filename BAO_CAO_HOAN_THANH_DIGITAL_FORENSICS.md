@@ -79,5 +79,8 @@ python tools/autopsy_handoff.py <case_id> ./autopsy_<case_id>
 - Tab Results/Graph thêm bộ lọc quan hệ + danh sách cạnh có `evidence` + link tải `relations.csv`.
 - Guide/DNS hint đã sửa để phản ánh chế độ offline (không `LIVE_DNS`, không AI cloud).
 
-## 7. Kết luận
+## 7. Tài liệu kiến trúc mới
+`KIEN_TRUC_HE_THONG.md` — 8 sơ đồ Mermaid + giải thích chi tiết: thành phần tổng thể, luồng phân tích, schema 8 bảng pháp chứng, graph quan hệ, SPF/DKIM/DMARC/DNS offline, báo cáo & chữ ký, ranh giới bàn giao Autopsy/tool local, bản đồ tập tin và giới hạn. `HUONG_DAN_SETUP_PYTHON.md` đã rà soát lại (bỏ mọi tham chiếu `LIVE_DNS=1`, Local AI, SIEM).
+
+## 8. Kết luận
 Hệ thống đã đáp ứng toàn bộ mã yêu cầu E1.1–E3.3, N1–N6, L1–L3 theo tiêu chuẩn đã chốt; mọi phát hiện đều truy được về chứng cứ gốc và được ký SHA-256 gắn phiên người dùng. Không có kết nối mạng trong toàn bộ luồng phân tích và xuất báo cáo.

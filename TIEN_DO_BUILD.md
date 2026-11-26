@@ -59,5 +59,6 @@ python tests\audit.py          # cần server chạy port 8100 (SMOKE_BASE)
 - 2026-11-26: GATE 0.5 xong — xóa 6 module runtime + 8 tool/test ML/SIEM; `app/dns_local.py` stub offline; compile/import OK.
 - 2026-11-26: P1-P10 hoàn tất. Tổng 31/31 unit test PASS; py_compile + node --check OK.
 - 2026-11-26: `BAO_CAO_HOAN_THANH_DIGITAL_FORENSICS.md` đã tạo; docs cập nhật.
+- 2026-11-26: rà soát `HUONG_DAN_SETUP_PYTHON.md`/`README.md` (bỏ LIVE_DNS=1/Local AI/SIEM); tạo `KIEN_TRUC_HE_THONG.md` (8 sơ đồ + giải thích).
 
-**Next action:** commit/push lần cuối; sau đó bàn giao cho người dùng (không còn phase nào trong checklist).
+**Next action:** commit/push tài liệu; không còn phase nào trong checklist.

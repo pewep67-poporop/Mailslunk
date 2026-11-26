@@ -106,7 +106,7 @@ Xem đầy đủ trong `.env.example`.
 | `PORT` | 8000 | Cổng HTTP |
 | `DATA_DIR` | ./data | DB, evidence, messages, quarantine, uploads/tmp/reports |
 | `GEOIP_DIR` | ../mailsleuth/geoip | Thư mục GeoLite2 `.mmdb` |
-| `LIVE_DNS` | 0 | Tra DNS thật (SPF/DKIM/DMARC) — `0` = offline-safe |
+| `DNS_SNAPSHOT` | data/dns_snapshot.json | Snapshot DNS local cho SPF/DKIM/DMARC lịch sử; không live |
 | `COOKIE_SECURE` | 0 | Đặt `1` khi chạy HTTPS |
 | `THREATSCAN_ENABLED` | 1 | Bật quét nội dung độc hại offline (heuristic + engine local nếu có) |
 | `THREATSCAN_TIMEOUT` | 15 | Timeout (giây) cho engine/tool quét |
@@ -141,7 +141,7 @@ node --check public\app.js
 
 ## Bảo mật & ghi chú
 
-- Mặc định **offline-safe** (`LIVE_DNS=0`, không bản đồ/AI ngoài). Key/secret lưu per-user trong `kv`, không echo/log; CCCD **không** được lưu.
+- Mặc định **offline 100%**: không DNS live, không bản đồ/AI ngoài. Key/secret lưu per-user trong `kv`, không echo/log; CCCD **không** được lưu.
 - Báo cáo trả về kèm CSP chặt (`default-src 'none'`), `nosniff`, `no-referrer`, `no-store`. HTML body hiển thị qua sanitize + sandbox.
 - Chữ ký SHA-256 là **dấu vân tay toàn vẹn dữ liệu** (tái lập/kiểm chứng), không phải chữ ký số khóa bí mật.
 
